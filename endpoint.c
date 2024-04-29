@@ -1,3 +1,5 @@
+#include<stdio.h>
+
 #include "endpoint.h"
 #include "transport.h"
 #include "common.h"
@@ -90,10 +92,25 @@ void _connect_cb_tremont(struct tremont_cb_param* param) {
 		&endpoint_ptr,
 		ctx->endpoint_db
 	);
-	
 	endpoint_ptr->state = CONNECT;
+
+	char alias_buf[255];
+	int res = 0;
+	res = endpoint_id_alias(alias_buf,
+		sizeof(alias_buf),
+		cb_params->endpoint_id,
+		ctx->endpoint_db);
+
+	if (res == -1) {
+		printf("\n%d status: connected!\n",
+			cb_params->endpoint_id);
+	}
+	else {
+		printf("\n%s (%d) connected!\n",
+			alias_buf,
+			cb_params->endpoint_id);
+	}
 	LeaveCriticalSection(&ctx->endpoint_db_cs);
-	
 	//tremont_rmcb_stream(param->stream_id, ctx->transport_pcb->nexus);
 	//free(param);
 }
@@ -140,5 +157,14 @@ int endpoint_unregister(
 	endpoint->state = NOTEXISTS;
 	endpoint->ctrl_stream_id = 0;
 
+	return 0;
+}
+
+DWORD WINAPI thread_endpoint(struct bleeddial_ctx_t* ctx) {
+	/* 
+		Send heartbeats.
+		Manage connections.
+		Notify when someone disconnects.
+	*/
 	return 0;
 }
