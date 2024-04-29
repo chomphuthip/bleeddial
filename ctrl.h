@@ -1,5 +1,12 @@
 #pragma once
 
+/*
+	Please look away now.
+	I have wielded macros in the most unholy manner.
+	One day I will have to repent for my crimes against C.
+	I am just a man.
+*/
+
 #include "tremont.h"
 #include "common.h"
 
