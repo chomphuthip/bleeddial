@@ -9,11 +9,6 @@
 
 typedef uint32_t endpoint_id_t;
 
-enum msg_type_t {
-	JOB,
-	HEARTBEAT
-};
-
 struct bleeddial_ctx_t {
 	CRITICAL_SECTION transport_pcb_cs;
 	struct transport_pcb_t* transport_pcb;

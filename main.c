@@ -4,9 +4,9 @@
 
 #include "common.h"
 
-#include "transport.h"
-#include "endpoint.h"
-#include "cli.h"
+#include "transport/transport.h"
+#include "endpoint/endpoint.h"
+#include "cli/cli.h"
 
 int init_ctx_sync(struct bleeddial_ctx_t* ctx) {
 	InitializeCriticalSection(&ctx->transport_pcb_cs);
@@ -45,6 +45,16 @@ int main() {
 	struct bleeddial_ctx_t ctx;
 	ctx.transport_pcb = &transport_pcb;
 	ctx.endpoint_db = &endpoint_db;
+
+	HANDLE endpoint_thread_handle;
+	endpoint_thread_handle = CreateThread(
+		NULL,
+		0,
+		thread_endpoint,
+		&ctx,
+		0,
+		0
+	);
 
 	init_ctx_sync(&ctx);
 
