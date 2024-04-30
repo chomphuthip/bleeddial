@@ -1,5 +1,5 @@
 # BleedDial
-A C2 implant that uses RTP.
+A C2 that uses RTP.
 
 Powered by [Tremont](https://github.com/chomphuthip/tremont).
 
