@@ -50,23 +50,23 @@ void _setup_socket(SOCKET* sock) {
 }
 
 
-void _setup_tremont(SOCKET* sock, Tremont_Nexus** nexus) {
+void _setup_tremont(SOCKET* sock, Tremont_Nexus** nexus_ptr) {
     int res = 0;
 
-    res = tremont_init_nexus(nexus);
+    res = tremont_init_nexus(nexus_ptr);
     if (res != 0) {
         //perror("Unable to initialize Tremont nexus!");
         exit(-1);
     }
 
     char key[] = ENCRYPTION_KEY;
-    res = tremont_key_nexus(key, sizeof(key), *nexus);
+    //res = tremont_key_nexus(key, sizeof(key), *nexus_ptr);
     if (res != 0) {
         //perror("Unable to key Tremont nexus!");
         exit(-1);
     }
 
-    res = tremont_bind_nexus(*sock, *nexus);
+    res = tremont_bind_nexus(*sock, *nexus_ptr);
     if (res != 0) {
         //perror("Unable to bind Tremont nexus!");
         exit(-1);
@@ -92,8 +92,6 @@ int _get_remote_addrinfo(struct addrinfo** remote_addr_ptr) {
 int _connect(struct transport_pcb_t* pcb) {
     Tremont_Nexus* nexus = pcb->nexus;
 
-    char key[] = ENCRYPTION_KEY;
-    tremont_key_nexus(key, sizeof(key), nexus);
     tremont_set_size(1200, nexus);
 
     _get_remote_addrinfo(&pcb->remote_addrinfo);

@@ -2,7 +2,53 @@
 #include<synchapi.h>
 
 #include "../transport/transport.h"
+#include "jobs.h"
 
+int track_job(HANDLE job_thread, struct jobs_t* jobs) {
+    /*
+        find next active in use slot
+        set handle to job_thread job
+        set active to 1
+    */
+    EnterCriticalSection(&jobs->jobs_cs);
+    
+    int next_free_slot = -1;
+    int cur_slot = 0;
+    
+    while (next_free_slot == -1 || cur_slot != MAX_JOBS) {
+        if (jobs->jobs[cur_slot].active == JOB_ACTIVE) cur_slot++;
+        else next_free_slot = cur_slot;
+    }
+    
+    if (next_free_slot != -1) {
+        jobs->jobs[next_free_slot].job_thread = job_thread;
+        jobs->jobs[next_free_slot].active = JOB_ACTIVE;
+    }
+
+    LeaveCriticalSection(&jobs->jobs_cs);
+    
+    return next_free_slot;
+}
+
+void untrack_job(HANDLE job_thread, struct jobs_t* jobs) {
+    int cur_slot = 0;
+
+    EnterCriticalSection(&jobs->jobs_cs);
+    
+    while (jobs->jobs[cur_slot].job_thread != job_thread ||
+        cur_slot != MAX_JOBS)
+        cur_slot++;
+
+    jobs->jobs[cur_slot].active = JOB_NOT;
+
+    LeaveCriticalSection(&jobs->jobs_cs);
+}
+
+void jobs_init(struct jobs_t* jobs) {
+    for (int i = 0; i < MAX_JOBS; i++) {
+        jobs->jobs[i].active = JOB_NOT;
+    }
+}
 
 struct powershell_info {
     PROCESS_INFORMATION proc_info;

