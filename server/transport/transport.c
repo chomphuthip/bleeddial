@@ -53,25 +53,25 @@ void _setup_socket(SOCKET* sock) {
     freeaddrinfo(res);
 }
 
-void _setup_tremont(SOCKET* sock, Tremont_Nexus** nexus) {
+void _setup_tremont(SOCKET* sock_ptr, Tremont_Nexus** nexus_ptr) {
     int res = 0;
 
-    res = tremont_init_nexus(nexus);
+    res = tremont_init_nexus(nexus_ptr);
     if (res != 0) {
         perror("Unable to initialize Tremont nexus!");
         exit(-1);
     }
 
     char key[] = ENCRYPTION_KEY;
-    res = tremont_key_nexus(key, sizeof(key), *nexus);
+    //res = tremont_key_nexus(key, sizeof(key), *nexus);
     if (res != 0) {
         perror("Unable to key Tremont nexus!");
         exit(-1);
     }
 
-    tremont_set_size(1200, nexus);
+    tremont_set_size(1200, *nexus_ptr);
 
-    res = tremont_bind_nexus(*sock, *nexus);
+    res = tremont_bind_nexus(*sock_ptr, *nexus_ptr);
     if (res != 0) {
         perror("Unable to bind Tremont nexus!");
         exit(-1);

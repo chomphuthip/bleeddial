@@ -102,9 +102,10 @@ void _connect_cb_tremont(struct tremont_cb_param* param) {
 		sizeof(alias_buf),
 		cb_params->endpoint_id,
 		ctx->endpoint_db);
-
+	
+	
 	if (res == -1) {
-		printf("\n%d status: connected!\n",
+		printf("\n%d connected!\n",
 			cb_params->endpoint_id);
 	}
 	else {
@@ -112,9 +113,8 @@ void _connect_cb_tremont(struct tremont_cb_param* param) {
 			alias_buf,
 			cb_params->endpoint_id);
 	}
+	fflush(stdout);
 	LeaveCriticalSection(&ctx->endpoint_db_cs);
-	//tremont_rmcb_stream(param->stream_id, ctx->transport_pcb->nexus);
-	//free(param);
 }
 
 int endpoint_register(
@@ -129,7 +129,7 @@ int endpoint_register(
 	db->endpoints_by_id[id].ctrl_stream_id = ctrl_stream;
 
 	struct _connect_cb_params* cb_params;
-	cb_params = malloc(sizeof(*cb_params));
+	cb_params = calloc(1, sizeof(*cb_params));
 	if (!cb_params) return -1;
 
 	cb_params->endpoint_id = id;
@@ -168,40 +168,37 @@ DWORD WINAPI thread_endpoint(struct bleeddial_ctx_t* ctx) {
 
 	tremont_stream_id cur_ctrl_stream;
 	struct endpoint_t* endpoint;
-	struct ctrl_msg_t recv_msg;
 	int poll = 0;
+
+	char alias_buf[ALIAS_MAX_LEN];
+	int res = -1;
 
 	while (1) {
 		for (int i = 0; i < MAX_ENDPOINTS; i++) {
-			if (endpoint_exists(i, db) == -1)
-				continue;
-			
 			endpoint = &db->endpoints_by_id[i];
 			cur_ctrl_stream = endpoint->ctrl_stream_id;
 
-			if (endpoint->state == CONNECT)
-				poll = tremont_poll_stream(cur_ctrl_stream,
-					nexus);
-
-			if (poll == 0) continue;
-
-			tremont_recv(cur_ctrl_stream, &recv_msg,
-				sizeof(recv_msg), nexus);
+			if (endpoint->state != CONNECT) continue;
 			
-			if (recv_msg.msg_enum == DISCONNECT) {
-				char alias_buf[ALIAS_MAX_LEN];
-				int res = -1;
-
+			poll = tremont_poll_stream(cur_ctrl_stream, nexus);
+			
+			if (poll == 0) continue;
+			
+			if (poll == -1) {
 				res = endpoint_id_alias(alias_buf,
 					sizeof(alias_buf),
 					i,
 					ctx->endpoint_db);
-				if (res == -1)
-					printf("%d disconnected!\n", i);
-				else
-					printf("%s (%d) disconnected!\n", alias_buf, i);
-			}
 				
+				if (res == -1) 
+					printf("\n%d disconnected!\n", i);
+				else
+					printf("\n%s (%d) disconnected!\n", alias_buf, i);
+				fflush(stdout);
+
+				db->endpoints_by_id[i].state = NOTCONNECT;
+				endpoint_register(i, cur_ctrl_stream, ctx);
+			}
 		}
 	}
 	return 0;

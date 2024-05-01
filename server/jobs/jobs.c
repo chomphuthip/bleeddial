@@ -205,7 +205,7 @@ int _est_powershell_stream(endpoint_id_t endpoint_id,
 	struct wrkr_msg_t res;
 	tremont_recv(powershell_stream, (byte*)&res, sizeof(res), nexus);
 
-	return res.upload.res.allowed == 1 ? 0 : -1;
+	return res.powershell.res.allowed == 1 ? 0 : -1;
 }
 
 int sync_powershell(struct powershell_params_t* params) {
@@ -231,15 +231,16 @@ int sync_powershell(struct powershell_params_t* params) {
 
 	while (1) {
 		memset(temp_recv, 0, sizeof(temp_recv));
+		
 		if (tremont_poll_stream(stream, nexus) == -1) break;
-		tremont_recv(stream, temp_recv, sizeof(temp_recv), nexus);
+		
+		if (tremont_recv(stream, temp_recv,
+			sizeof(temp_recv), nexus) == -1) break;
+		
 		printf("%s", temp_recv);
 
 		if (_kbhit()) {
 			cur_char = getchar();
-
-			if (cur_char == 3 || cur_char == EOF)
-				break;
 
 			if (cur_char == '\n') {
 				temp_input[0] = '\r';
@@ -251,8 +252,7 @@ int sync_powershell(struct powershell_params_t* params) {
 
 			temp_input[0] = (char)cur_char;
 			fgets(temp_input + 1, sizeof(temp_input), stdin);
-			strcat_s(temp_input, sizeof(temp_input), "\r\n");
-
+			
 			input_len = (int)strlen(temp_input);
 			tremont_send(stream, temp_input, input_len, nexus);
 
