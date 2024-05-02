@@ -126,7 +126,7 @@ int _handle_alias(char* user_input,
 	endpoint_id_t id = 0;
 
 	second_word = strtok_s(NULL, " ", tok_ctx_ptr);
-	if (strcmp(second_word, "set") == 0) {
+	if (strncmp(second_word, "set", 3) == 0) {
 		size_t alias_len = 0;
 		char* alias;
 		char* end;
@@ -141,7 +141,7 @@ int _handle_alias(char* user_input,
 		LeaveCriticalSection(&ctx->endpoint_db_cs);
 		return 0;
 	}
-	if (strcmp(second_word, "reset") == 0) {
+	if (strncmp(second_word, "reset", 5) == 0) {
 		char* end;
 		errno = 0;
 
@@ -276,6 +276,91 @@ UNKNOWN:
 	return 0;
 }
 
+int _handle_upload(char* user_input,
+	char** tok_ctx_ptr,
+	struct cli_info_t* cli_info,
+	struct bleeddial_ctx_t* ctx) {
+
+	char* local_path;
+	size_t local_path_len;
+	char* remote_path;
+	size_t remote_path_len;
+	
+	local_path = strtok_s(NULL, " ", tok_ctx_ptr);
+	local_path_len = strlen(local_path);
+
+	remote_path = strtok_s(NULL, " \n", tok_ctx_ptr);;
+	remote_path_len = strlen(remote_path);
+
+	struct upload_params_t* params;
+	params = calloc(1, sizeof(*params));
+	if (params == 0) return -1;
+
+	params->ctx = ctx;
+	params->endpoint_id = cli_info->endpoint_id;
+
+	memcpy(params->local_path, local_path, sizeof(local_path));
+	params->local_path_len = local_path_len;
+
+	memcpy(params->remote_path, remote_path, sizeof(remote_path));
+	params->remote_path_len = remote_path_len;
+
+	CreateThread(NULL, 0, thread_upload, params, 0, 0);
+
+	return 0;
+}
+
+int _handle_download(char* user_input,
+	char** tok_ctx_ptr,
+	struct cli_info_t* cli_info,
+	struct bleeddial_ctx_t* ctx) {
+
+	char* local_path;
+	size_t local_path_len;
+	char* remote_path;
+	size_t remote_path_len;
+
+	remote_path = strtok_s(NULL, " ", tok_ctx_ptr);
+	remote_path_len = strlen(remote_path);
+
+	local_path = strtok_s(NULL, " \n", tok_ctx_ptr);
+	local_path_len = strlen(local_path);
+
+	struct download_params_t* params;
+	params = calloc(1, sizeof(*params));
+	if (params == 0) return -1;
+
+	params->ctx = ctx;
+	params->endpoint_id = cli_info->endpoint_id;
+
+	memcpy(params->local_path, local_path, sizeof(local_path));
+	params->local_path_len = local_path_len;
+
+	memcpy(params->remote_path, remote_path, sizeof(remote_path));
+	params->remote_path_len = remote_path_len;
+
+	CreateThread(NULL, 0, thread_download, params, 0, 0);
+
+	return 0;
+}
+
+int _handle_unhook_local(char* user_input,
+	char** tok_ctx_ptr,
+	struct cli_info_t* cli_info,
+	struct bleeddial_ctx_t* ctx) {
+
+	struct unhookl_params_t* params;
+	params = calloc(1, sizeof(*params));
+	if (params == 0) return -1;
+
+	params->ctx = ctx;
+	params->endpoint_id = cli_info->endpoint_id;
+
+	CreateThread(NULL, 0, thread_unhookl, params, 0, 0);
+
+	return 0;
+}
+
 int _handle_user_input(char* user_input, 
 					   size_t user_input_len, 
 					   struct cli_info_t* cli_info,
@@ -288,38 +373,42 @@ int _handle_user_input(char* user_input,
 	first_word = strtok_s(user_input, " ", &tok_ctx);
 	
 	if (cli_info->cli_state == TOP) {
-		if (strcmp(first_word, "tone") == 0) {
+		if (strncmp(first_word, "tone", 4) == 0) {
 			return _handle_tone(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strcmp(first_word, "alias") == 0) {
+		if (strncmp(first_word, "alias", 5) == 0) {
 			return _handle_alias(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strcmp(first_word, "show_nexus_key\n") == 0) {
+		if (strncmp(first_word, "show_nexus_key", 15) == 0) {
 			return _handle_show_nexus_key(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strcmp(first_word, "print_nexus_key\n") == 0) {
+		if (strncmp(first_word, "print_nexus_key", 15) == 0) {
 			return _handle_print_nexus_key(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strcmp(first_word, "list_endpoints\n") == 0) {
+		if (strncmp(first_word, "list_endpoints", 14) == 0) {
 			return _handle_list_e(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strcmp(first_word, "register_endpoint") == 0) {
+		if (strncmp(first_word, "register_endpoint", 17) == 0) {
 			return _handle_register(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strcmp(first_word, "unregister_endpoint") == 0) {
+		if (strncmp(first_word, "unregister_endpoint", 19) == 0) {
 			return _handle_unregister(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strcmp(first_word, "exit\n") == 0) {
+		if (strncmp(first_word, "exit", 4) == 0) {
 			return -1;
 		}
 	}
 	if (cli_info->cli_state == TONE) {
-		if (strcmp(first_word, "download") == 0) {
-			//return _handle_download(user_input, &tok_ctx, cli_info, ctx
-			printf("sim downloading....\n");
-			return 0;
+		if (strncmp(first_word, "upload", 8) == 0) {
+			return _handle_upload(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strcmp(first_word, "powershell\n") == 0) {
+		if (strncmp(first_word, "download", 8) == 0) {
+			return _handle_download(user_input, &tok_ctx, cli_info, ctx);
+		}
+		if (strncmp(first_word, "unhook_local", 8) == 0) {
+			return _handle_unhook_local(user_input, &tok_ctx, cli_info, ctx);
+		}
+		if (strncmp(first_word, "powershell", 10) == 0) {
 			struct powershell_params_t* p = calloc(1, sizeof(*p));
 			if (p == 0) return -1;
 			p->ctx = ctx;
@@ -331,7 +420,7 @@ int _handle_user_input(char* user_input,
 
 			return 0;
 		}
-		if (strcmp(first_word, "exit\n") == 0) {
+		if (strncmp(first_word, "exit", 4) == 0) {
 			cli_info->cli_state = TOP;
 			cli_info->endpoint_id = 0;
 			return 0;

@@ -96,7 +96,7 @@ char path[255];
 size_t path_len;
 REQ_TEMPLATE_END(download);
 
-struct download_res_t { uint32_t file_size; };
+struct download_res_t { uint8_t allowed; int64_t file_len; };
 
 SIMPLE_FIN(download);
 SIMPLE_FAK(download);
@@ -108,7 +108,25 @@ union {
 	struct download_fin_t fin;
 	struct download_fak_t fak;
 };
-MSG_TEMPLATE_END(upload);
+MSG_TEMPLATE_END(download);
+
+/* -- UNHOOK_L: UNHOOK USING LOCAL NTDLL -- */
+
+REQ_TEMPLATE_BEGIN(unhookl);
+REQ_TEMPLATE_END(unhookl);
+
+ALLOWED_RES(unhookl);
+SIMPLE_FIN(unhookl);
+SIMPLE_FAK(unhookl);
+
+MSG_TEMPLATE_BEGIN(unhookl);
+union {
+	struct unhookl_req_t req;
+	struct unhookl_res_t res;
+	struct unhookl_fin_t fin;
+	struct unhookl_fak_t fak;
+};
+MSG_TEMPLATE_END(unhookl);
 
 enum wrkr_msg_enum_t {
 	POWERSHELL,
@@ -117,7 +135,8 @@ enum wrkr_msg_enum_t {
 	UNHOOK_L,
 	UNHOOK_BYON,
 	RUN_CODE,
-	RUN_BIN
+	RUN_BIN,
+	JOB_QUERY
 };
 
 struct wrkr_msg_t {
@@ -126,8 +145,8 @@ struct wrkr_msg_t {
 		struct powershell_msg_t powershell;
 		struct upload_msg_t upload;
 		struct download_msg_t download;
+		struct unhookl_msg_t unhookl;
 		/*
-			struct unhookl_msg_t unhookl;
 			struct unhookbyon_msg_t unhookbyon;
 			struct runcode_msg_t runcode;
 			struct runbin_msg_t runbin;
@@ -156,7 +175,7 @@ struct disconnect_msg_t {
 enum ctrl_msg_enum_t {
 	NEW_THREAD,
 	HEARTBEAT,
-	DISCONNECT
+	DISCONNECT,
 };
 
 struct ctrl_msg_t {

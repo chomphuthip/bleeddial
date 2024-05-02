@@ -163,12 +163,18 @@ int endpoint_unregister(
 }
 
 DWORD WINAPI thread_endpoint(struct bleeddial_ctx_t* ctx) {
-	struct endpoint_db_t* db = ctx->endpoint_db;
+	/*struct endpoint_db_t* db = ctx->endpoint_db;
 	Tremont_Nexus* nexus = ctx->transport_pcb->nexus;
 
 	tremont_stream_id cur_ctrl_stream;
 	struct endpoint_t* endpoint;
 	int poll = 0;
+
+	struct ctrl_msg_t heartbeat_req;
+	heartbeat_req.msg_enum = HEARTBEAT;
+	heartbeat_req.heartbeat.sanity = 1;
+
+	struct ctrl_msg_t heartbeat_res;
 
 	char alias_buf[ALIAS_MAX_LEN];
 	int res = -1;
@@ -179,12 +185,15 @@ DWORD WINAPI thread_endpoint(struct bleeddial_ctx_t* ctx) {
 			cur_ctrl_stream = endpoint->ctrl_stream_id;
 
 			if (endpoint->state != CONNECT) continue;
-			
+
+			tremont_send(cur_ctrl_stream,
+				(byte*)&heartbeat_req, sizeof(heartbeat_req), nexus);
+
+			Sleep(2000);
+
 			poll = tremont_poll_stream(cur_ctrl_stream, nexus);
-			
-			if (poll == 0) continue;
-			
-			if (poll == -1) {
+
+			if (poll == 0) {
 				res = endpoint_id_alias(alias_buf,
 					sizeof(alias_buf),
 					i,
@@ -198,8 +207,14 @@ DWORD WINAPI thread_endpoint(struct bleeddial_ctx_t* ctx) {
 
 				db->endpoints_by_id[i].state = NOTCONNECT;
 				endpoint_register(i, cur_ctrl_stream, ctx);
+
+				tremont_end_stream(cur_ctrl_stream, nexus);
+			}
+			else {
+				tremont_recv(cur_ctrl_stream,
+					(byte*)&heartbeat_res, sizeof(heartbeat_res), nexus);
 			}
 		}
-	}
+	}*/
 	return 0;
 }
