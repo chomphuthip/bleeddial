@@ -15,6 +15,8 @@ struct job_t {
 struct jobs_t {
     CRITICAL_SECTION jobs_cs;
     struct job_t jobs[MAX_JOBS];
+
+    HANDLE* main_thread_handle;
 };
 
 int track_job(HANDLE* job_thread, struct jobs_t* jobs);

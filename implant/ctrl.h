@@ -153,10 +153,14 @@ struct disconnect_msg_t {
 	uint8_t sanity;
 };
 
+struct job_query_msg_t {
+	uint8_t sanity;
+};
+
 enum ctrl_msg_enum_t {
 	NEW_THREAD,
 	HEARTBEAT,
-	DISCONNECT
+	DISCONNECT,
 };
 
 struct ctrl_msg_t {

