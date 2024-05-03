@@ -4,6 +4,9 @@
 #include<string.h>
 #include<ctype.h>
 
+#include<Shlwapi.h>
+#pragma comment(lib, "Shlwapi.lib")
+
 #include "../transport/transport.h"
 #include "../endpoint/endpoint.h"
 #include "../jobs/jobs.h"
@@ -32,6 +35,50 @@ void _print_prompt(struct cli_info_t* cli_info,
 		if (res == -1) printf("(%d)#", cli_info->endpoint_id);
 		else printf("(%d-%s)#", cli_info->endpoint_id, endpoint_alias);
 	}
+}
+
+#define PATH_FROM 0
+#define PATH_TO   1
+
+int _from_to_paths(char* input, char from_to_tuple[2][255]) {
+	char* tok;
+	char* file_name_ptr;
+	char* context = NULL;
+
+	if (from_to_tuple == 0) return -1; //couldn't allocate
+
+	tok = strtok_s(input, " \n", &context);
+	if (!strchr(tok, '/')) {
+		strncpy_s(from_to_tuple[PATH_FROM], 255, "./", _TRUNCATE);
+		strncat_s(from_to_tuple[PATH_FROM], 255, tok, _TRUNCATE);
+	}
+	else {
+		strncpy_s(from_to_tuple[PATH_FROM], 255, tok, _TRUNCATE);
+	}
+
+	file_name_ptr = PathFindFileNameA(from_to_tuple[PATH_FROM]);
+	if (strlen(file_name_ptr) == strlen(from_to_tuple[PATH_FROM])
+		&& strchr(from_to_tuple[PATH_FROM], '/'))
+		return -2; //no file specified
+
+	tok = strtok_s(NULL, " \n", &context);
+	if (tok == NULL) {
+		strncpy_s(from_to_tuple[PATH_TO], 255, "./", _TRUNCATE);
+		strncat_s(from_to_tuple[PATH_TO], 255,
+			file_name_ptr, 255 - strlen(from_to_tuple[PATH_TO]));
+		return 0;
+	}
+	strncpy_s(from_to_tuple[PATH_TO], 255, tok, _TRUNCATE);
+
+	if (from_to_tuple[PATH_TO][0] == '.')
+		strncat_s(from_to_tuple[PATH_TO], 255, "/", _TRUNCATE);
+
+	size_t dst_len = strlen(from_to_tuple[PATH_TO]);
+	if (from_to_tuple[PATH_TO][dst_len - 1] == '/')
+		strncat_s(from_to_tuple[PATH_TO], 255,
+			file_name_ptr, 255 - strlen(from_to_tuple[PATH_TO]));
+
+	return 0;
 }
 
 
@@ -281,16 +328,13 @@ int _handle_upload(char* user_input,
 	struct cli_info_t* cli_info,
 	struct bleeddial_ctx_t* ctx) {
 
-	char* local_path;
-	size_t local_path_len;
-	char* remote_path;
-	size_t remote_path_len;
-	
-	local_path = strtok_s(NULL, " ", tok_ctx_ptr);
-	local_path_len = strlen(local_path);
+	char from_to_tuple[2][255];
 
-	remote_path = strtok_s(NULL, " \n", tok_ctx_ptr);;
-	remote_path_len = strlen(remote_path);
+	int res = _from_to_paths(*tok_ctx_ptr, from_to_tuple);
+	if (res == -2) {
+		printf("No file specified!\n");
+		return 0;
+	}
 
 	struct upload_params_t* params;
 	params = calloc(1, sizeof(*params));
@@ -299,11 +343,19 @@ int _handle_upload(char* user_input,
 	params->ctx = ctx;
 	params->endpoint_id = cli_info->endpoint_id;
 
-	memcpy(params->local_path, local_path, sizeof(local_path));
-	params->local_path_len = local_path_len;
+	strncpy_s(params->local_path,
+		255,
+		from_to_tuple[PATH_FROM],
+		_TRUNCATE
+	);
+	params->local_path_len = strlen(from_to_tuple[PATH_FROM]);
 
-	memcpy(params->remote_path, remote_path, sizeof(remote_path));
-	params->remote_path_len = remote_path_len;
+	strncpy_s(params->remote_path,
+		255,
+		from_to_tuple[PATH_TO],
+		_TRUNCATE
+	);
+	params->remote_path_len = strlen(from_to_tuple[PATH_TO]);
 
 	CreateThread(NULL, 0, thread_upload, params, 0, 0);
 
@@ -315,16 +367,13 @@ int _handle_download(char* user_input,
 	struct cli_info_t* cli_info,
 	struct bleeddial_ctx_t* ctx) {
 
-	char* local_path;
-	size_t local_path_len;
-	char* remote_path;
-	size_t remote_path_len;
+	char from_to_tuple[2][255];
 
-	remote_path = strtok_s(NULL, " ", tok_ctx_ptr);
-	remote_path_len = strlen(remote_path);
-
-	local_path = strtok_s(NULL, " \n", tok_ctx_ptr);
-	local_path_len = strlen(local_path);
+	int res = _from_to_paths(*tok_ctx_ptr, from_to_tuple);
+	if (res == -2) {
+		printf("No file specified!\n");
+		return 0;
+	}
 
 	struct download_params_t* params;
 	params = calloc(1, sizeof(*params));
@@ -333,11 +382,19 @@ int _handle_download(char* user_input,
 	params->ctx = ctx;
 	params->endpoint_id = cli_info->endpoint_id;
 
-	memcpy(params->local_path, local_path, sizeof(local_path));
-	params->local_path_len = local_path_len;
+	strncpy_s(params->local_path,
+		255,
+		from_to_tuple[PATH_FROM],
+		_TRUNCATE
+	);
+	params->local_path_len = strlen(from_to_tuple[PATH_FROM]);
 
-	memcpy(params->remote_path, remote_path, sizeof(remote_path));
-	params->remote_path_len = remote_path_len;
+	strncpy_s(params->remote_path,
+		255,
+		from_to_tuple[PATH_TO],
+		_TRUNCATE
+	);
+	params->remote_path_len = strlen(from_to_tuple[PATH_TO]);
 
 	CreateThread(NULL, 0, thread_download, params, 0, 0);
 
@@ -405,7 +462,7 @@ int _handle_user_input(char* user_input,
 		if (strncmp(first_word, "download", 8) == 0) {
 			return _handle_download(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strncmp(first_word, "unhook_local", 8) == 0) {
+		if (strncmp(first_word, "unhook_local", 13) == 0) {
 			return _handle_unhook_local(user_input, &tok_ctx, cli_info, ctx);
 		}
 		if (strncmp(first_word, "powershell", 10) == 0) {
