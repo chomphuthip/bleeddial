@@ -55,7 +55,7 @@ DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
     case UNHOOK_L: {
         struct unhookl_msg_t* unhookl_msg = &msg.unhookl;
         struct unhookl_req_t* unhookl_req = &unhookl_msg->req;
-        implant_upload(&trans, unhookl_req);
+        implant_unhookl(&trans, unhookl_req);
         break;
     }
     default:
