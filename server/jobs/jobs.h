@@ -50,7 +50,7 @@ struct powershell_params_t {
 int sync_powershell(struct powershell_params_t* params);
 
 /*
-	Download file to the endpoint.
+	Unhooks using local ntdll copy.
 */
 struct unhookl_params_t {
 	struct bleeddial_ctx_t* ctx;
@@ -58,3 +58,16 @@ struct unhookl_params_t {
 };
 
 DWORD WINAPI thread_unhookl(struct unhookl_params_t* params);
+
+/*
+	Unhooks using uploaded ntdll copy.
+*/
+struct unhookbyon_params_t {
+	struct bleeddial_ctx_t* ctx;
+	endpoint_id_t endpoint_id;
+
+	char local_path[255];
+	size_t local_path_len;
+};
+
+DWORD WINAPI thread_unhookbyon(struct unhookbyon_params_t* params);

