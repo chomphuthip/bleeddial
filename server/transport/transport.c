@@ -7,7 +7,6 @@
 
 #include "transport.h"
 
-
 #pragma comment(lib, "Ws2_32.lib")
 
 #define ENCRYPTION_KEY "I LOVE PARSING"
