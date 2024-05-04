@@ -28,6 +28,8 @@ int track_job(HANDLE* job_thread, struct jobs_t* jobs);
 
 void untrack_job(HANDLE* job_thread, struct jobs_t* jobs);
 
+uint32_t calc_percentage(int num, int denom);
+
 void implant_powershell(tremont_stream_id stream_id,
 	Tremont_Nexus* nexus);
 
