@@ -166,6 +166,26 @@ int _handle_print_nexus_key(char* user_input,
 	return 0;
 }
 
+int _handle_fetch() {
+	printf( "                                                                                                    \n"
+			"                                                                                                    \n"
+			"                     &&&&&&     &&                           &  &&&&&       &                &      \n"
+			"   #######           &    &&    &&                           &  &    &&                      &      \n"
+			"   #######           &    &     &&      &&&&     &&&&    &&& &  &     &     &      &&&&      &      \n"
+			"   #######           && &&&     &&     &    &  &     &  &    &#####   &     &     &    &     &      \n"
+			"    #######          &    &&    &&    &&&&&&& &&&&&&&& ########    ######## &      &&&&&     &      \n"
+			"    #####            &    &&    &&     &       &    ######   &  &     &   ########&    &     &      \n"
+			"     ###             &&&&&&     &&     &&&&&   ######     &&&&  &&&&&&      &     ######     &      \n"
+			"      ####                                  ####                                      ########      \n"
+			"       #####       #########          #######                                               ########\n"
+			"         ######    #####################                                                            \n"
+			"            ################                                                                        \n"
+			"                ##########                                                                          \n"
+			"                                                                                                    \n"
+			"                                                                                                    \n");
+	return 0;
+}
+
 
 int _handle_alias(char* user_input,
 	char** tok_ctx_ptr,
@@ -497,6 +517,9 @@ int _handle_user_input(char* user_input,
 	first_word = strtok_s(user_input, " ", &tok_ctx);
 	
 	if (cli_info->cli_state == TOP) {
+		if (strncmp(first_word, "fetch", 4) == 0) {
+			return _handle_fetch();
+		}
 		if (strncmp(first_word, "tone", 4) == 0) {
 			return _handle_tone(user_input, &tok_ctx, cli_info, ctx);
 		}
