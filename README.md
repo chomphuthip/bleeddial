@@ -1,7 +1,7 @@
 # BleedDial
 A C2 that uses RTP.
 
-Powered by [Tremont](https://github.com/chomphuthip/tremont).
+Powered by [Tremont](https://github.com/chomphuthip/tremont). Uses [ztap](https://github.com/chomphuthip/ztap) for process injection.
 
 Feature Roadmap:
 * ✔ Interractive Powershell session.
