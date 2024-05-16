@@ -10,7 +10,4 @@ Feature Roadmap:
 * ✔ Unhooking ntdll.dll with local copy.
 * ✔ Bring-your-own-ntdll.dll to use to unhook.
 * ✔ Running shellcode in memory.
-* Running full PEs in memory by manually mapping to itself.
-* Reflective DLL injection.
-* Persistance through Autorun.
 * Configuring implants through writing to .data section.
