@@ -11,4 +11,4 @@ Feature Roadmap:
 * ✔ Bring-your-own-ntdll.dll to use to unhook.
 * ✔ Running shellcode in memory.
 * ✔ Reflective PE injection with manual mapping.
-* Configuring implants through writing to .data section.
+* ✔ Configuring implants through writing to .data section.
