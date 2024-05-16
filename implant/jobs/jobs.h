@@ -47,3 +47,9 @@ int implant_unhookbyon(struct wrkr_trans_t* trans,
 
 int implant_runcode(struct wrkr_trans_t* trans,
     struct runcode_req_t* req);
+
+int implant_pst32(struct wrkr_trans_t* trans,
+    struct pst32_req_t* req);
+
+int implant_inject(struct wrkr_trans_t* trans,
+    struct inject_req_t* req);

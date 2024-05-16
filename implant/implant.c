@@ -21,6 +21,11 @@ struct new_thread_params_t {
     HANDLE self;
 };
 
+struct settings_t settings = {
+    .x6969 = 0x6969,
+    .use_me = 0
+};
+
 DWORD WINAPI wrkr_thread(struct new_thread_params_t* params) {
     struct wrkr_msg_t msg;
     tremont_recv(params->stream_id,
@@ -189,38 +194,5 @@ int main() {
     }
     freeaddrinfo(raddrinfo);
 
-    return 0;
-}
-
-BOOL WINAPI ConsoleHandler(DWORD signal) {
-    Tremont_Nexus* nexus = emergency_pcb_pointer->nexus;
-    struct ctrl_msg_t byebye;
-    byebye.msg_enum = DISCONNECT;
-    byebye.disconnect.sanity = 1;
-
-    switch (signal) {
-    case CTRL_C_EVENT:
-    case CTRL_CLOSE_EVENT:
-    case CTRL_BREAK_EVENT:
-    case CTRL_LOGOFF_EVENT:
-    case CTRL_SHUTDOWN_EVENT:
-        tremont_send(CTRL_STREAM, (byte*)&byebye, sizeof(byebye), nexus);
-        break;
-    }
-    return FALSE;
-}
-
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    Tremont_Nexus* nexus = emergency_pcb_pointer->nexus;
-    struct ctrl_msg_t byebye;
-    byebye.msg_enum = DISCONNECT;
-    byebye.disconnect.sanity = 1;
-
-    switch (uMsg) {
-    case WM_CLOSE:
-        DestroyWindow(hwnd);
-    case WM_DESTROY:
-        tremont_send(CTRL_STREAM, (byte*)&byebye, sizeof(byebye), nexus);
-    }
     return 0;
 }

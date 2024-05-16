@@ -695,8 +695,6 @@ int implant_runcode(struct wrkr_trans_t* trans, struct runcode_req_t* req) {
     return 0;
 }
 
-#undef UNICODE
-
 struct _pst32_proc_t {
     uint32_t proc_id;
     wchar_t exe_name[255];
