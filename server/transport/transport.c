@@ -10,6 +10,7 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 #define ENCRYPTION_KEY "I LOVE PARSING"
+#define PORT "9999"
 
 void _init_winsock() {
     printf("Initiallizing Winsock...\n");
@@ -31,7 +32,7 @@ void _setup_socket(SOCKET* sock) {
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
-    int addr_info_res = getaddrinfo("127.0.0.1", "9999", &hints, &res);
+    int addr_info_res = getaddrinfo("127.0.0.1", PORT, &hints, &res);
     if (addr_info_res != 0) {
         perror("Invaid address!\n");
         exit(-1);
@@ -62,7 +63,7 @@ void _setup_tremont(SOCKET* sock_ptr, Tremont_Nexus** nexus_ptr) {
     }
 
     char key[] = ENCRYPTION_KEY;
-    //res = tremont_key_nexus(key, sizeof(key), *nexus);
+    res = tremont_key_nexus(key, sizeof(key), *nexus_ptr);
     if (res != 0) {
         perror("Unable to key Tremont nexus!");
         exit(-1);

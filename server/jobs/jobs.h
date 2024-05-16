@@ -113,3 +113,19 @@ struct inject_params_t {
 };
 
 DWORD WINAPI thread_inject(struct inject_params_t* params);
+
+/*
+	.
+*/
+struct newimplant_params_t {
+	struct bleeddial_ctx_t* ctx;
+	char path_to_template[255];
+
+	char ip[16];
+	char remote_port[16];
+	char local_port[16];
+
+	tremont_stream_id ctrl_stream;
+};
+
+DWORD WINAPI thread_newimplant(struct newimplant_params_t* params);

