@@ -1,6 +1,8 @@
 # BleedDial
 A C2 that uses RTP.
 
+![demo](https://github.com/chomphuthip/bleeddial/assets/122696634/1005860a-5572-4814-8576-3ac9a24482bd)
+
 Powered by [Tremont](https://github.com/chomphuthip/tremont). Uses [ztap](https://github.com/chomphuthip/ztap) for process injection.
 
 Feature Roadmap:
