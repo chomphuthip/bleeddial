@@ -1,5 +1,5 @@
 # BleedDial
-A C2 that uses RTP.
+C2 framework that uses RTP.
 
 ![demo](https://github.com/chomphuthip/bleeddial/assets/122696634/1005860a-5572-4814-8576-3ac9a24482bd)
 
